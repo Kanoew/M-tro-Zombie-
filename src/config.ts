@@ -21,6 +21,8 @@ export const CONFIG = {
     range: 26,
     arcDuration: 140, // ms
     cooldown: 350, // ms
+    damage: 15,
+    halfAngle: 1.0, // rad, demi-ouverture de l'arc
   },
 
   // Lot 3 : jour et nuit (secondes depuis le départ du refuge).
@@ -29,27 +31,46 @@ export const CONFIG = {
     nightAt: 480, // 8 min : les infectés entendent plus loin
   },
 
-  // Lot 2 : extraction. Horloge indépendante de celle du jour.
+  // Extraction. Horloge indépendante de celle du jour.
   extraction: {
     closingSeconds: 60,
   },
 
-  // Rayons de bruit (px). Les objets émettent, les infectés réagissent (lot 2).
+  // Rayons de bruit (px). Les infectés à portée se déplacent vers la source.
   noise: {
     crateOpened: 110,
     forcedDoor: 150,
-    forcedDoorMuffled: 60, // avec un amortisseur sur la masse
+    forcedDoorMuffled: 60, // lot 4 : amortisseur sur la masse
     quayAnnouncement: 260,
   },
 
-  // Lot 2 : un seul type d'infecté au prototype.
+  // Un seul type d'infecté au prototype.
   infected: {
-    speed: 45,
-    wanderSpeed: 20,
-    hearingRadiusDay: 90,
-    hearingRadiusNight: 220,
-    nightChaseInLineOfSight: true,
+    speed: 45, // plus lent que le joueur (85) : on peut les distancer le jour
+    wanderSpeed: 18,
+    speedNightFactor: 1.3,
+    detectionRadiusDay: 70, // vue sur le joueur, ligne de vue requise
+    detectionRadiusNight: 220, // la nuit : poursuite en ligne droite dans la rue
+    noiseHearingFactorNight: 1.6, // la nuit, ils entendent plus loin
+    loseTrackMs: 2500,
+    lingerMs: 2500,
     hp: 30,
     contactDamage: 10,
+    contactCooldownMs: 900,
+    contactRange: 11,
+    knockbackMs: 140,
   },
-} as const;
+
+  companion: {
+    followDistance: 22,
+    speedFactor: 0.95,
+  },
+
+  // Butin d'une caisse.
+  loot: {
+    rareChance: 0.08,
+    valuableChance: 0.27,
+    materialsMin: 1,
+    materialsMax: 3,
+  },
+};
