@@ -26,6 +26,10 @@ npm run build    # vérification TypeScript + build dans dist/
 - À la fermeture : joueur dans la rame = retour réussi (butin crédité une fois), sinon échec. La mécanicienne doit être à bord pour valider le sauvetage.
 - Une mort ou une rame ratée fait perdre le butin ; les acquis restent.
 
+## Objectif et repères
+
+Le talkie annonce la mission au départ. Une flèche autour du joueur pointe vers l'objectif en cours, avec la distance en mètres : l'atelier tant que la mécanicienne attend, puis la borne du quai, puis la rame. L'atelier porte une enseigne « ATELIER » sur son toit, qui disparaît quand on ouvre la porte.
+
 ## Armes et personnages
 
 Les armes sont des données dans `src/weapons.ts` (dégâts, cadence, portée, **bruit**, mêlée ou distance). Chaque personnage a un `loadout` ; ajouter une arme ou un personnage (le second aura des pistolets) ne demande pas de toucher à la mission.

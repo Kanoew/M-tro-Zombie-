@@ -40,6 +40,8 @@ interface Interactable {
 interface BuildingView {
   roof: Phaser.GameObjects.TileSprite;
   trim: Phaser.GameObjects.Rectangle;
+  /** Enseigne posée sur le toit (disparaît avec lui). */
+  label?: Phaser.GameObjects.Text;
   revealed: boolean;
 }
 
@@ -235,6 +237,15 @@ export class MissionScene extends Phaser.Scene {
     if (!this.scene.isActive('UI')) this.scene.launch('UI');
     this.game.events.emit('mission-start');
     this.game.events.emit('prompt', null);
+
+    // Mission du jour, annoncée par le talkie tant que la mécanicienne n'est pas sauvée.
+    if (!gameState.rescued.mecanicienne) {
+      this.time.delayedCall(1500, () => {
+        if (!this.ended) {
+          this.toast("Talkie : « Une mécanicienne est coincée à l'atelier, au nord-est du camp. Suivez la flèche. »");
+        }
+      });
+    }
   }
 
   update(time: number, delta: number): void {
@@ -388,7 +399,22 @@ export class MissionScene extends Phaser.Scene {
         .rectangle(px + pw / 2, py + ph / 2, pw - 1.5, ph - 1.5)
         .setStrokeStyle(1.4, color, 0.95)
         .setDepth(bottom + 0.1);
-      this.buildingViews.set(b.id, { roof, trim, revealed: false });
+      // L'atelier porte une enseigne lisible : c'est là qu'attend la mécanicienne.
+      let label: Phaser.GameObjects.Text | undefined;
+      if (b.id === 'atelier') {
+        label = this.add
+          .text(px + pw / 2, py + ph / 2, 'ATELIER', {
+            fontFamily: 'monospace',
+            fontSize: '44px',
+            fontStyle: 'bold',
+            color: '#d4f8ff',
+          })
+          .setOrigin(0.5)
+          .setScale(0.28)
+          .setShadow(0, 0, '#35d6ff', 18, true, true)
+          .setDepth(bottom + 0.5);
+      }
+      this.buildingViews.set(b.id, { roof, trim, label, revealed: false });
       sign(NEON_KEYS[i % NEON_KEYS.length], px + pw * 0.22, bottom - 20, 0.2);
       sign(NEON_KEYS[(i + 3) % NEON_KEYS.length], px + pw * 0.78, bottom - 20, 0.2);
     });
@@ -434,12 +460,13 @@ export class MissionScene extends Phaser.Scene {
     if (!view || view.revealed) return;
     view.revealed = true;
     this.tweens.add({
-      targets: [view.roof, view.trim],
+      targets: [view.roof, view.trim, ...(view.label ? [view.label] : [])],
       alpha: 0,
       duration: 500,
       onComplete: () => {
         view.roof.destroy();
         view.trim.destroy();
+        view.label?.destroy();
       },
     });
   }
@@ -819,7 +846,24 @@ export class MissionScene extends Phaser.Scene {
       butin: { ...gameState.butin },
       extraction: this.callEndsAt === null ? null : Math.max(0, Math.ceil((this.callEndsAt - time) / 1000)),
       escort,
+      player: { x: this.player.x, y: this.player.y },
+      objective: this.objective(),
     };
+  }
+
+  /** Où aller maintenant : l'atelier tant que la mécanicienne attend, puis la borne, puis la rame. */
+  private objective(): HudData['objective'] {
+    const T = CONFIG.tile;
+    if (this.companion && !this.companion.following) {
+      const door = this.map.entities.find((e) => e.id === 'door-atelier');
+      if (door) return { x: door.tx * T + T / 2, y: door.ty * T + T / 2, label: 'ATELIER' };
+    }
+    if (this.callEndsAt !== null) {
+      const z = TRAIN_ZONE;
+      return { x: ((z.x0 + z.x1 + 1) / 2) * T, y: ((z.y0 + z.y1 + 1) / 2) * T, label: 'RAME' };
+    }
+    const t = this.terminalPos();
+    return { x: t.x, y: t.y, label: 'BORNE DU QUAI' };
   }
 
   private nearestInteractable(): Interactable | null {

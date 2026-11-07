@@ -72,6 +72,8 @@ export class UIScene extends Phaser.Scene {
   private tint!: Phaser.GameObjects.Rectangle;
   private dayMarker!: Phaser.GameObjects.Rectangle;
   private dayLabel!: Phaser.GameObjects.Text;
+  private objArrow!: Phaser.GameObjects.Triangle;
+  private objText!: Phaser.GameObjects.Text;
   private flash!: Phaser.GameObjects.Rectangle;
 
   private resultLayer!: Phaser.GameObjects.Container;
@@ -320,6 +322,22 @@ export class UIScene extends Phaser.Scene {
       .text(this.scale.width - 8 * K, dayY + DAY_H + 4 * K, 'JOUR', { fontFamily: FONT, fontSize: `${8 * K}px`, color: '#f2c14e' })
       .setOrigin(1, 0);
 
+    // Flèche d'objectif : tourne autour du joueur (centre de l'écran) vers l'atelier, la borne ou la rame.
+    this.objArrow = this.add
+      .triangle(0, 0, 0, -12 * K, 9 * K, 9 * K, -9 * K, 9 * K, 0xffe27a, 0.95)
+      .setStrokeStyle(1.5 * K, 0x05070c, 0.9)
+      .setVisible(false);
+    this.objText = this.add
+      .text(0, 0, '', {
+        fontFamily: FONT,
+        fontSize: `${9 * K}px`,
+        color: '#ffe27a',
+        backgroundColor: '#070b12cc',
+        padding: { x: 3 * K, y: 1 * K },
+      })
+      .setOrigin(0.5)
+      .setVisible(false);
+
     // Butin, survivante.
     this.hudText = this.add
       .text(8 * K, 78 * K, '', {
@@ -336,6 +354,7 @@ export class UIScene extends Phaser.Scene {
   private renderHud(h: HudData): void {
     this.hud = h;
     this.tint.setFillStyle(lightAt(h.elapsed), 1);
+    this.renderObjective(h);
     const dayX = this.scale.width - 8 * K - DAY_W;
     this.dayMarker.setX(dayX + Math.min(1, h.elapsed / DAY_SPAN) * DAY_W);
     const phaseLabel = { day: ['JOUR', '#f2c14e'], dusk: ['CRÉPUSCULE', '#ff9a4a'], night: ['NUIT', '#8aa0ff'] }[h.phase];
@@ -360,6 +379,29 @@ export class UIScene extends Phaser.Scene {
         .setColor(h.extraction <= 10 ? '#ff6666' : '#ffe27a')
         .setVisible(!this.resultVisible);
     }
+  }
+
+  private renderObjective(h: HudData): void {
+    const o = h.objective;
+    const { width, height } = this.scale;
+    const dx = o ? o.x - h.player.x : 0;
+    const dy = o ? o.y - h.player.y : 0;
+    const dist = Math.hypot(dx, dy);
+    // Cachée quand l'objectif est déjà à l'écran (ou pendant le bilan).
+    if (!o || this.resultVisible || dist < 110) {
+      this.objArrow.setVisible(false);
+      this.objText.setVisible(false);
+      return;
+    }
+    const angle = Math.atan2(dy, dx);
+    const R = Math.min(width, height) * 0.36;
+    const cx = width / 2 + Math.cos(angle) * R;
+    const cy = height / 2 - 30 * K + Math.sin(angle) * R;
+    this.objArrow.setPosition(cx, cy).setRotation(angle + Math.PI / 2).setVisible(true);
+    this.objText
+      .setText(`${o.label} · ${Math.round(dist / CONFIG.tile)} m`)
+      .setPosition(cx - Math.cos(angle) * 22 * K, cy - Math.sin(angle) * 22 * K)
+      .setVisible(true);
   }
 
   private drawBars(h: HudData): void {

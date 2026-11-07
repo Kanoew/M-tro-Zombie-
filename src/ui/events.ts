@@ -16,6 +16,9 @@ export interface HudData {
   /** Secondes restantes avant la fermeture des portes, ou null si la rame n'est pas appelée. */
   extraction: number | null;
   escort: 'none' | 'waiting' | 'following' | 'rescued';
+  /** Position du joueur et objectif en cours (la flèche de l'interface pointe vers lui). */
+  player: { x: number; y: number };
+  objective: { x: number; y: number; label: string } | null;
 }
 
 /** Événement 'mission-end'. */
