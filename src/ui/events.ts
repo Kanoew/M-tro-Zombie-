@@ -4,6 +4,10 @@ import type { Stock } from '../state/gameState';
 export interface HudData {
   hp: number;
   maxHp: number;
+  stamina: number;
+  maxStamina: number;
+  /** Endurance épuisée : la course est bloquée jusqu'à récupération. */
+  exhausted: boolean;
   weapon: string;
   butin: Stock;
   /** Secondes restantes avant la fermeture des portes, ou null si la rame n'est pas appelée. */

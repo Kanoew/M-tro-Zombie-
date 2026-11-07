@@ -13,8 +13,9 @@ npm run build    # vérification TypeScript + build dans dist/
 
 ## Commandes
 
-- Clavier : ZQSD, WASD ou flèches pour bouger, E ou Espace pour interagir, F ou J pour attaquer.
-- Tactile : joystick flottant sur la moitié gauche de l'écran, boutons ACT et ATQ à droite.
+- Clavier : ZQSD, WASD ou flèches pour bouger, **Maj** pour courir, E ou Espace pour interagir, F ou J pour attaquer.
+- Tactile : joystick flottant sur la moitié gauche de l'écran, boutons ACT, ATQ et COURIR (maintenu) à droite.
+- Courir consomme l'endurance (barre jaune). À zéro, on est épuisé : la course reste bloquée jusqu'à récupération. Courir se remarque de plus loin.
 
 ## Règles du lot 2
 
@@ -24,6 +25,28 @@ npm run build    # vérification TypeScript + build dans dist/
 - La borne du quai appelle la rame : annonce bruyante, puis 60 secondes avant la fermeture des portes.
 - À la fermeture : joueur dans la rame = retour réussi (butin crédité une fois), sinon échec. La mécanicienne doit être à bord pour valider le sauvetage.
 - Une mort ou une rame ratée fait perdre le butin ; les acquis restent.
+
+## Carte et décor
+
+- Carte en paysage de 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur.
+- Chaque bâtiment fermé est recouvert d'un toit : on ne voit pas ce qu'il contient. Ouvrir ou forcer la porte lève le toit. Le contenu (pièce vide, caisses, infectés) est tiré à chaque sortie ; l'atelier abrite toujours la mécanicienne.
+- Quand la rame attend, le quai fait du bruit à intervalles réguliers : tous les infectés encore en vie convergent vers la borne, et de nouveaux arrivent des bords de la carte, hors de vue (voir `extraction` dans `src/config.ts`).
+- Chaque infecté affiche sa barre de vie.
+
+## Écran titre
+
+Choix du personnage : Joanna est jouable, le second emplacement est verrouillé. Depuis le bilan, `M` ou le bouton MENU ramène au titre.
+
+## Art
+
+Les planches de personnages et les morceaux de décor sont dans `public/art/`. Ils sont produits à partir des images sources (non versionnées, trop lourdes) :
+
+```bash
+python3 tools/prepare_sheets.py <dossier_sources> public/art   # personnages (nettoyage, échelle, alignement des pieds)
+python3 tools/prepare_decor.py <image_decor> public/art        # sol, toits, néons, métro, fond du titre
+```
+
+Ajouter `?renderer=canvas` à l'adresse force le rendu 2D (essais automatisés sans carte graphique).
 
 ## Version et cache
 
@@ -37,12 +60,14 @@ Le numéro de version (`package.json`) et l'heure du build s'affichent en bas à
 - `src/entities/` : infecté, survivant escorté, suivi de chemin.
 - `src/state/gameState.ts` : acquis et butin, règles de bilan.
 - `src/input/Controls.ts` : entrées clavier et tactile.
-- `src/scenes/` : mission (monde) et interface (HUD, joystick, boutons).
+- `src/scenes/` : chargement, titre, mission (monde) et interface (HUD, joystick, boutons, pluie).
+- `src/render/characters.ts` : planches, animations, orientation des personnages peints.
 
 ## Avancement
 
 - [x] Lot 1 : déplacement, collisions et interactions dans le quartier.
 - [x] Lot 2 : bruit, infectés, sauvetage et extraction de 60 secondes.
+- [x] Hors lot : écran titre, grande carte cachée, course et endurance, renforts de la rame, sprites et décor peints.
 - [ ] Lot 3 : jour et nuit, bilan, atelier et sauvegarde locale.
 - [ ] Lot 4 : campagne, nouveaux quartiers, commerce et améliorations rares.
 

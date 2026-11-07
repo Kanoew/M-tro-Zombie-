@@ -1,22 +1,29 @@
 import Phaser from 'phaser';
 import { CONFIG } from './config';
+import { BootScene } from './scenes/BootScene';
 import { MissionScene } from './scenes/MissionScene';
+import { TitleScene } from './scenes/TitleScene';
 import { UIScene } from './scenes/UIScene';
 import { gameState } from './state/gameState';
 
+// ?renderer=canvas force le rendu 2D (utile pour les essais automatisés sans carte graphique).
+const forceCanvas = new URLSearchParams(window.location.search).get('renderer') === 'canvas';
+
 const game = new Phaser.Game({
-  type: Phaser.AUTO,
+  type: forceCanvas ? Phaser.CANVAS : Phaser.AUTO,
   parent: 'app',
   width: CONFIG.view.width,
   height: CONFIG.view.height,
   backgroundColor: '#070b12',
-  pixelArt: true,
+  // Personnages et décor peints : lissage actif. Les tuiles dessinées en code restent nettes (voir textures.ts).
+  pixelArt: false,
+  antialias: true,
   physics: { default: 'arcade', arcade: { debug: false } },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [MissionScene, UIScene],
+  scene: [BootScene, TitleScene, MissionScene, UIScene],
 });
 
 // Accès de debug pour les essais dans le navigateur.

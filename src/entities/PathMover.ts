@@ -43,7 +43,6 @@ export class PathMover {
       return true;
     }
     sprite.setVelocity(((wp.x - sprite.x) / d) * speed, ((wp.y - sprite.y) / d) * speed);
-    sprite.rotation = Math.atan2(wp.y - sprite.y, wp.x - sprite.x);
     return true;
   }
 }
