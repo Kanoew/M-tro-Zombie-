@@ -10,8 +10,11 @@ type KeyMap = Record<string, Phaser.Input.Keyboard.Key>;
 export class Controls {
   /** Vecteur du joystick tactile, norme entre 0 et 1. */
   readonly touch = new Phaser.Math.Vector2(0, 0);
+  /** Bouton de course tactile maintenu. */
+  touchSprint = false;
 
   private readonly keys: KeyMap;
+  private readonly shift: Phaser.Input.Keyboard.Key;
   private interactQueued = false;
   private attackQueued = false;
 
@@ -19,6 +22,7 @@ export class Controls {
     const kb = scene.input.keyboard;
     if (!kb) throw new Error('Clavier indisponible');
     this.keys = kb.addKeys('Z,Q,S,D,W,A,UP,DOWN,LEFT,RIGHT') as KeyMap;
+    this.shift = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
     kb.addCapture('UP,DOWN,LEFT,RIGHT,SPACE');
 
     // Actions sur événements : un appui très bref n'est jamais perdu.
@@ -31,6 +35,11 @@ export class Controls {
     kb.on('keydown-SPACE', interact);
     kb.on('keydown-F', attack);
     kb.on('keydown-J', attack);
+  }
+
+  /** Course demandée (Maj au clavier, bouton COURIR au tactile). */
+  get sprintHeld(): boolean {
+    return this.shift.isDown || this.touchSprint;
   }
 
   get vector(): Phaser.Math.Vector2 {

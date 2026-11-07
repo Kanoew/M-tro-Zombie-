@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { Companion } from '../entities/Companion';
-import { Infected, type Phase } from '../entities/Infected';
+import { Infected, type InfectedContext, type Phase } from '../entities/Infected';
 import { Controls } from '../input/Controls';
+import { Animator, NEON_KEYS, setupCharacter } from '../render/characters';
 import { createTextures } from '../render/textures';
 import {
   describeStock,
@@ -12,7 +13,14 @@ import {
   startMission,
 } from '../state/gameState';
 import type { HudData, MissionEnd } from '../ui/events';
-import { buildMap, TRAIN_ZONE, type Entity } from '../world/map';
+import {
+  buildMap,
+  REINFORCEMENT_TILES,
+  TERMINAL_TILE,
+  TRAIN_ZONE,
+  type Entity,
+  type MapData,
+} from '../world/map';
 import { Nav } from '../world/nav';
 
 interface Interactable {
@@ -24,6 +32,12 @@ interface Interactable {
   use: () => void;
 }
 
+interface BuildingView {
+  roof: Phaser.GameObjects.TileSprite;
+  trim: Phaser.GameObjects.Rectangle;
+  revealed: boolean;
+}
+
 export interface NoiseEvent {
   x: number;
   y: number;
@@ -31,22 +45,31 @@ export interface NoiseEvent {
   source: string;
 }
 
+const NEON_COLORS = [0xff4fd8, 0x35d6ff, 0xb06bff, 0xff6b6b, 0x58e6cc];
 const labelOf = (it: Interactable) => (typeof it.label === 'function' ? it.label() : it.label);
 
 /**
  * Une sortie sur le terrain : fouiller, faire du bruit, éviter ou combattre
  * les infectés, escorter la mécanicienne, appeler la rame et tenir 60 secondes.
  *
+ * Les bâtiments fermés sont recouverts par leur toit : on ne sait pas ce
+ * qu'il y a dedans tant que la porte n'est pas ouverte.
+ *
  * Les règles (bruit, extraction, bilan) vivent ici et dans `state/` ; le rendu
  * et les entrées sont ailleurs (textures, Controls, UIScene).
  */
 export class MissionScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
+  private playerAnim!: Animator;
   private controls!: Controls;
   private nav!: Nav;
+  private map!: MapData;
   private interactables: Interactable[] = [];
   private infected: Infected[] = [];
+  private infectedGroup!: Phaser.Physics.Arcade.Group;
+  private infectedCtx!: InfectedContext;
   private companion: Companion | null = null;
+  private buildingViews = new Map<string, BuildingView>();
   private facing = new Phaser.Math.Vector2(1, 0);
   private lastPrompt: string | null = null;
   private nextAttackAt = 0;
@@ -54,10 +77,19 @@ export class MissionScene extends Phaser.Scene {
   private now = 0;
 
   private hp = CONFIG.player.maxHp;
+  private stamina = CONFIG.player.stamina.max;
+  private exhausted = false;
+  private sprinting = false;
+  private lastSprintAt = -99999;
+
   private ended = false;
   private callEndsAt: number | null = null;
+  private nextWaitNoiseAt = 0;
+  private nextReinforceAt = 0;
   private train!: Phaser.GameObjects.Rectangle;
   private trainWindows!: Phaser.GameObjects.Rectangle;
+  private fog!: Phaser.GameObjects.TileSprite;
+  private quayLights: Phaser.GameObjects.Arc[] = [];
 
   constructor() {
     super({ key: 'Mission' });
@@ -70,59 +102,49 @@ export class MissionScene extends Phaser.Scene {
 
     this.ended = false;
     this.hp = CONFIG.player.maxHp;
+    this.stamina = CONFIG.player.stamina.max;
+    this.exhausted = false;
+    this.sprinting = false;
+    this.lastSprintAt = -99999;
     this.callEndsAt = null;
     this.interactables = [];
     this.infected = [];
     this.companion = null;
+    this.buildingViews = new Map();
+    this.quayLights = [];
     this.lastPrompt = null;
     this.nextAttackAt = 0;
     this.nextHudAt = 0;
 
     const map = buildMap();
+    this.map = map;
     this.nav = new Nav(map, T);
+    const worldW = map.width * T;
+    const worldH = map.height * T;
     this.cameras.main.setBackgroundColor(0x070b12);
+    this.cameras.main.fadeIn(350, 5, 7, 15);
 
     const solids = this.physics.add.staticGroup();
-
-    // Sol et murs.
-    for (let ty = 0; ty < map.height; ty++) {
-      for (let tx = 0; tx < map.width; tx++) {
-        const tile = map.tiles[ty][tx];
-        const x = tx * T + T / 2;
-        const y = ty * T + T / 2;
-        if (tile === 'wall') solids.create(x, y, 'wall');
-        else this.add.image(x, y, tile);
-      }
-    }
-
-    // Rame (visible une fois appelée).
-    const z = TRAIN_ZONE;
-    const zw = (z.x1 - z.x0 + 1) * T;
-    const zh = (z.y1 - z.y0 + 1) * T;
-    const zx = z.x0 * T + zw / 2;
-    const zy = z.y0 * T + zh / 2;
-    this.train = this.add.rectangle(zx, zy, zw, zh, 0x2e3a52).setStrokeStyle(2, 0x58d0ff).setDepth(4).setAlpha(0);
-    this.trainWindows = this.add.rectangle(zx, z.y0 * T + 6, zw - 12, 4, 0xffe27a).setDepth(4).setAlpha(0);
+    this.buildGround(map, solids, worldW, worldH);
 
     // Joueur.
     const spawnEnt = map.entities.find((e) => e.kind === 'spawn');
     const spawn = spawnEnt
       ? { x: spawnEnt.tx * T + T / 2, y: spawnEnt.ty * T + T / 2 }
       : { x: T * 2, y: T * 2 };
-    this.player = this.physics.add.sprite(spawn.x, spawn.y, 'player');
-    const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const s = CONFIG.player.bodySize;
-    body.setSize(s, s).setOffset((16 - s) / 2, (16 - s) / 2);
+    this.player = this.physics.add.sprite(spawn.x, spawn.y, 'joanna_walk', 0);
+    setupCharacter(this.player);
+    this.playerAnim = new Animator(this.player, 'joanna');
     this.player.setCollideWorldBounds(true);
-    this.player.setDepth(10);
     this.physics.add.collider(this.player, solids);
 
     // Entités.
-    const infectedGroup = this.physics.add.group();
-    const ctx = {
+    this.infectedGroup = this.physics.add.group();
+    this.infectedCtx = {
       nav: this.nav,
       player: this.player,
       phase: (): Phase => this.phase(),
+      sprinting: () => this.sprinting,
       hitPlayer: (dmg: number, fx: number, fy: number) => this.hitPlayer(dmg, fx, fy),
     };
 
@@ -142,31 +164,39 @@ export class MissionScene extends Phaser.Scene {
         case 'npc':
           if (!gameState.rescued.mecanicienne) this.addCompanion(solids, e, x, y);
           break;
-        case 'infected': {
-          const inf = new Infected(this, x, y, ctx);
-          infectedGroup.add(inf);
-          this.infected.push(inf);
+        case 'infected':
+          this.spawnInfected(x, y);
           break;
-        }
         default:
       }
     }
     if (gameState.rescued.mecanicienne) {
-      const e: Entity = { kind: 'npc', id: 'mecanicienne-refuge', tx: 4, ty: 31 };
-      this.addStatic(
-        solids, e, e.tx * T + T / 2, e.ty * T + T / 2, 'npc', 'Mécanicienne',
-        () => this.toast("La mécanicienne : « L'atelier sera prêt bientôt. »"), true,
-      );
+      const e: Entity = { kind: 'npc', id: 'mecanicienne-refuge', tx: 6, ty: 47 };
+      const mx = e.tx * T + T / 2;
+      const my = e.ty * T + T / 2;
+      const npc = this.add.sprite(mx, my, 'mecano_walk', 0).setScale(CONFIG.sprites.scale).setOrigin(0.5, CONFIG.sprites.originY).setDepth(my);
+      this.interactables.push({
+        entity: e,
+        sprite: npc,
+        label: 'Mécanicienne',
+        active: true,
+        use: () => this.toast("La mécanicienne : « L'atelier sera prêt bientôt. »"),
+      });
     }
-    this.physics.add.collider(infectedGroup, solids);
-    this.physics.add.collider(infectedGroup, infectedGroup);
+    this.physics.add.collider(this.infectedGroup, solids);
+    this.physics.add.collider(this.infectedGroup, this.infectedGroup);
 
-    const worldW = map.width * T;
-    const worldH = map.height * T;
     this.physics.world.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setZoom(CONFIG.view.zoom);
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+
+    this.fog = this.add
+      .tileSprite(0, 0, worldW, worldH, 'fog')
+      .setOrigin(0)
+      .setTileScale(1.3)
+      .setAlpha(0.34)
+      .setDepth(3500);
 
     this.controls = new Controls(this);
     this.registry.set('controls', this.controls);
@@ -184,11 +214,31 @@ export class MissionScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     this.now = time;
+    this.fog.tilePositionX += delta * 0.006;
+    this.fog.tilePositionY += delta * 0.002;
     if (this.ended) return;
 
+    // Déplacement, course et endurance.
     const v = this.controls.vector;
-    this.player.setVelocity(v.x * CONFIG.player.speed, v.y * CONFIG.player.speed);
-    if (v.lengthSq() > 0.04) this.facing.copy(v).normalize();
+    const moving = v.lengthSq() > 0.04;
+    const st = CONFIG.player.stamina;
+    if (this.exhausted && this.stamina >= st.exhaustedUntil) this.exhausted = false;
+    this.sprinting = moving && this.controls.sprintHeld && !this.exhausted && this.stamina > 0;
+    if (this.sprinting) {
+      this.stamina = Math.max(0, this.stamina - (st.drain * delta) / 1000);
+      this.lastSprintAt = time;
+      if (this.stamina <= 0) {
+        this.exhausted = true;
+        this.sprinting = false;
+      }
+    } else if (time - this.lastSprintAt >= st.regenDelayMs) {
+      this.stamina = Math.min(st.max, this.stamina + (st.regen * delta) / 1000);
+    }
+    const speed = CONFIG.player.speed * (this.sprinting ? CONFIG.player.sprintFactor : 1);
+    this.player.setVelocity(v.x * speed, v.y * speed);
+    if (moving) this.facing.copy(v).normalize();
+    this.playerAnim.update(v.x * speed, v.y * speed, this.sprinting ? 1.5 : 1);
+    this.player.setDepth(this.player.y);
 
     const target = this.nearestInteractable();
     const prompt = target ? labelOf(target) : null;
@@ -218,10 +268,115 @@ export class MissionScene extends Phaser.Scene {
     return 'day';
   }
 
+  // --- Décor ---------------------------------------------------------------
+
+  /** Sol, sols intérieurs, murs, toits qui cachent les bâtiments, néons et ambiance. */
+  private buildGround(
+    map: MapData,
+    solids: Phaser.Physics.Arcade.StaticGroup,
+    worldW: number,
+    worldH: number,
+  ): void {
+    const T = CONFIG.tile;
+    this.add.tileSprite(0, 0, worldW, worldH, 'ground').setOrigin(0).setTileScale(0.36).setDepth(-20);
+
+    // Quai.
+    this.add.tileSprite(56 * T, 46 * T, 38 * T, 8 * T, 'quay').setOrigin(0).setDepth(-10);
+
+    // Murs (ceux des bâtiments restent cachés sous les toits tant qu'une porte est fermée).
+    for (let ty = 0; ty < map.height; ty++) {
+      for (let tx = 0; tx < map.width; tx++) {
+        if (map.tiles[ty][tx] === 'wall') solids.create(tx * T + T / 2, ty * T + T / 2, 'wall').setDepth(0);
+      }
+    }
+
+    map.buildings.forEach((b, i) => {
+      const px = b.x * T;
+      const py = b.y * T;
+      const pw = b.w * T;
+      const ph = b.h * T;
+      const bottom = py + ph;
+      this.add.tileSprite(px, py, pw, ph, 'floor').setOrigin(0).setDepth(-10);
+
+      const color = NEON_COLORS[i % NEON_COLORS.length];
+      // Enseignes au néon posées sur le toit : visibles de loin, sans rien révéler.
+      const sign = (key: string, x: number, y: number, scale: number) => {
+        const s = this.add.image(x, y, key).setScale(scale).setBlendMode(Phaser.BlendModes.SCREEN).setDepth(bottom + 0.4);
+        this.tweens.add({
+          targets: s,
+          alpha: { from: 1, to: 0.55 },
+          duration: Phaser.Math.Between(90, 220),
+          yoyo: true,
+          repeat: -1,
+          repeatDelay: Phaser.Math.Between(900, 4200),
+        });
+      };
+      if (b.id !== 'refuge') {
+        const roof = this.add
+          .tileSprite(px, py, pw, ph, i % 2 ? 'roof_a' : 'roof_b')
+          .setOrigin(0)
+          .setTileScale(0.3)
+          .setTint(0xa79cc4)
+          .setDepth(bottom);
+        const trim = this.add
+          .rectangle(px + pw / 2, py + ph / 2, pw - 1.5, ph - 1.5)
+          .setStrokeStyle(1.4, color, 0.95)
+          .setDepth(bottom + 0.1);
+        this.buildingViews.set(b.id, { roof, trim, revealed: false });
+        sign(NEON_KEYS[i % NEON_KEYS.length], px + pw * 0.22, bottom - 20, 0.2);
+        sign(NEON_KEYS[(i + 3) % NEON_KEYS.length], px + pw * 0.78, bottom - 20, 0.2);
+      } else {
+        this.buildingViews.set(b.id, { roof: null as never, trim: null as never, revealed: true });
+      }
+    });
+
+    // Entrée de métro au-dessus de la borne, bannières de quarantaine, lumières de secours.
+    const tx = TERMINAL_TILE.tx * T + T / 2;
+    this.add.image(tx, 46 * T + 4, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth(46 * T - 1);
+    const banners: [number, number][] = [[36, 17], [62, 38], [12, 38], [90, 42], [30, 54]];
+    for (const [bx, by] of banners) {
+      this.add.image(bx * T, by * T, 'banner').setScale(0.3).setDepth(by * T);
+    }
+    for (const [lx, ly] of [[58, 48], [91, 48]] as [number, number][]) {
+      const light = this.add.circle(lx * T, ly * T, 22, 0xff2a2a, 0.2).setBlendMode(Phaser.BlendModes.ADD).setDepth(3000);
+      this.tweens.add({ targets: light, alpha: { from: 0.05, to: 0.35 }, duration: 700, yoyo: true, repeat: -1 });
+      this.quayLights.push(light);
+    }
+
+    // Rame (visible une fois appelée).
+    const z = TRAIN_ZONE;
+    const zw = (z.x1 - z.x0 + 1) * T;
+    const zh = (z.y1 - z.y0 + 1) * T;
+    const zx = z.x0 * T + zw / 2;
+    const zy = z.y0 * T + zh / 2;
+    this.train = this.add.rectangle(zx, zy, zw, zh, 0x2e3a52).setStrokeStyle(1.4, 0x58d0ff).setDepth(1).setAlpha(0);
+    this.trainWindows = this.add.rectangle(zx, z.y0 * T + 6, zw - 12, 4, 0xffe27a).setDepth(1.1).setAlpha(0);
+  }
+
+  /** Lève le toit d'un bâtiment : son contenu apparaît. */
+  private revealBuilding(id: string | undefined): void {
+    const view = id ? this.buildingViews.get(id) : undefined;
+    if (!view || view.revealed) return;
+    view.revealed = true;
+    this.tweens.add({
+      targets: [view.roof, view.trim],
+      alpha: 0,
+      duration: 500,
+      onComplete: () => {
+        view.roof.destroy();
+        view.trim.destroy();
+      },
+    });
+  }
+
   // --- Objets du monde -----------------------------------------------------
 
   private addDoor(solids: Phaser.Physics.Arcade.StaticGroup, e: Entity, x: number, y: number): void {
+    const b = this.map.buildings.find((bb) => bb.id === e.building);
+    const bottom = b ? (b.y + b.h) * CONFIG.tile : y;
     const sprite = solids.create(x, y, e.open ? 'door_open' : 'door') as Phaser.Physics.Arcade.Sprite;
+    // Fermée, la porte reste visible au-dessus du toit ; ouverte, on passe par-dessus.
+    sprite.setDepth(e.open ? -0.5 : bottom + 0.5);
     const it: Interactable = {
       entity: e,
       sprite,
@@ -230,8 +385,10 @@ export class MissionScene extends Phaser.Scene {
       use: () => {
         it.active = false;
         sprite.setTexture('door_open');
+        sprite.setDepth(-0.5);
         sprite.disableBody();
         this.nav.openDoor(e.tx, e.ty);
+        this.revealBuilding(e.building);
         if (e.forced) {
           this.emitNoise(x, y, CONFIG.noise.forcedDoor, e.id);
           this.toast('Porte forcée. Ça résonne.');
@@ -246,6 +403,7 @@ export class MissionScene extends Phaser.Scene {
 
   private addCrate(solids: Phaser.Physics.Arcade.StaticGroup, e: Entity, x: number, y: number): void {
     const sprite = solids.create(x, y, 'crate') as Phaser.Physics.Arcade.Sprite;
+    sprite.setDepth(y);
     const it: Interactable = {
       entity: e,
       sprite,
@@ -273,6 +431,7 @@ export class MissionScene extends Phaser.Scene {
     reusable = false,
   ): void {
     const sprite = solids.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
+    sprite.setDepth(y);
     const it: Interactable = {
       entity: e,
       sprite,
@@ -304,6 +463,13 @@ export class MissionScene extends Phaser.Scene {
     this.interactables.push(it);
   }
 
+  private spawnInfected(x: number, y: number): Infected {
+    const inf = new Infected(this, x, y, this.infectedCtx);
+    this.infectedGroup.add(inf);
+    this.infected.push(inf);
+    return inf;
+  }
+
   private rollLoot(): string {
     const L = CONFIG.loot;
     const r = Math.random();
@@ -323,21 +489,22 @@ export class MissionScene extends Phaser.Scene {
 
   // --- Bruit, combat -------------------------------------------------------
 
-  private emitNoise(x: number, y: number, radius: number, source: string): void {
+  /** `radius` : portée d'écoute ; `visualRadius` : taille de l'onde affichée. */
+  private emitNoise(x: number, y: number, radius: number, source: string, visualRadius = radius): void {
     for (const inf of this.infected) inf.hear(x, y, radius);
     const event: NoiseEvent = { x, y, radius, source };
     this.game.events.emit('noise', event);
 
     // Repère visuel du rayon (utile pour régler le bruit aux essais).
-    const ring = this.add.circle(x, y, 4).setStrokeStyle(1, 0xff4f8b, 0.9).setDepth(5);
+    const ring = this.add.circle(x, y, 4).setStrokeStyle(0.8, 0xff4f8b, 0.9).setDepth(3200);
     const grow = { r: 4 };
     this.tweens.add({
       targets: grow,
-      r: radius,
+      r: visualRadius,
       duration: 700,
       onUpdate: () => {
         ring.setRadius(grow.r);
-        ring.setAlpha(1 - grow.r / radius);
+        ring.setAlpha(1 - grow.r / visualRadius);
       },
       onComplete: () => ring.destroy(),
     });
@@ -349,10 +516,10 @@ export class MissionScene extends Phaser.Scene {
     const px = this.player.x;
     const py = this.player.y;
 
-    const g = this.add.graphics().setDepth(11);
-    g.lineStyle(2, 0xeaf6ff, 0.9);
+    const g = this.add.graphics().setDepth(3300);
+    g.lineStyle(1, 0xeaf6ff, 0.9);
     g.beginPath();
-    g.arc(px, py, range * 0.8, angle - halfAngle, angle + halfAngle);
+    g.arc(px, py - 8, range * 0.8, angle - halfAngle, angle + halfAngle);
     g.strokePath();
     this.tweens.add({ targets: g, alpha: 0, duration: arcDuration, onComplete: () => g.destroy() });
 
@@ -379,26 +546,29 @@ export class MissionScene extends Phaser.Scene {
 
   // --- Extraction ----------------------------------------------------------
 
+  private terminalPos(): { x: number; y: number } {
+    const T = CONFIG.tile;
+    return { x: TERMINAL_TILE.tx * T + T / 2, y: TERMINAL_TILE.ty * T + T / 2 };
+  }
+
   private callTrain(): void {
     if (this.callEndsAt !== null) {
-      this.toast(`La rame arrive. Fermeture des portes dans ${this.secondsLeft()} s.`);
+      this.toast(`La rame est là. Fermeture des portes dans ${this.secondsLeft()} s.`);
       return;
     }
-    const closing = CONFIG.extraction.closingSeconds;
-    this.callEndsAt = this.now + closing * 1000;
-    const term = this.interactables.find((i) => i.entity.kind === 'terminal');
-    if (term) this.emitNoise(term.sprite.x, term.sprite.y, CONFIG.noise.quayAnnouncement, 'annonce-quai');
-    this.toast(`Rame appelée. Fermeture des portes dans ${closing} s. Les infectés arrivent.`);
+    const X = CONFIG.extraction;
+    this.callEndsAt = this.now + X.closingSeconds * 1000;
+    this.nextWaitNoiseAt = this.now + X.waitNoiseEveryMs;
+    this.nextReinforceAt = this.now + 2500;
+    const t = this.terminalPos();
+    this.emitNoise(t.x, t.y, CONFIG.noise.quayAnnouncement, 'annonce-quai', CONFIG.noise.quayVisual);
+    this.toast(`Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`);
 
     const slide = { dx: 140 };
     const baseX = this.train.x;
     this.train.setX(baseX + slide.dx);
     this.trainWindows.setX(baseX + slide.dx);
-    this.tweens.add({
-      targets: [this.train, this.trainWindows],
-      alpha: 1,
-      duration: 900,
-    });
+    this.tweens.add({ targets: [this.train, this.trainWindows], alpha: 1, duration: 900 });
     this.tweens.add({
       targets: slide,
       dx: 0,
@@ -409,6 +579,7 @@ export class MissionScene extends Phaser.Scene {
         this.trainWindows.setX(baseX + slide.dx);
       },
     });
+    for (const light of this.quayLights) light.setAlpha(0.4);
   }
 
   private secondsLeft(): number {
@@ -417,13 +588,42 @@ export class MissionScene extends Phaser.Scene {
 
   private updateExtraction(time: number): void {
     if (this.callEndsAt === null) return;
+    const X = CONFIG.extraction;
     const left = this.callEndsAt - time;
+
+    // Tant que la rame attend, le quai fait du bruit : les infectés encore en vie y convergent...
+    if (time >= this.nextWaitNoiseAt) {
+      this.nextWaitNoiseAt = time + X.waitNoiseEveryMs;
+      const t = this.terminalPos();
+      this.emitNoise(t.x, t.y, CONFIG.noise.quayWaiting, 'rame-en-attente', CONFIG.noise.quayVisual);
+    }
+    // ... et d'autres arrivent des bords de la carte.
+    if (time >= this.nextReinforceAt) {
+      this.nextReinforceAt = time + X.reinforceEveryMs;
+      this.spawnReinforcement();
+    }
+
     // Les portes clignotent sur les 10 dernières secondes.
     if (left < 10000) {
       const blink = Math.floor(left / 300) % 2 === 0;
-      this.train.setStrokeStyle(2, blink ? 0xff4f4f : 0x58d0ff);
+      this.train.setStrokeStyle(1.4, blink ? 0xff4f4f : 0x58d0ff);
     }
     if (left <= 0) this.closeDoors();
+  }
+
+  /** Un nouvel infecté entre par un bord de carte, hors de vue, et file vers la borne. */
+  private spawnReinforcement(): void {
+    const X = CONFIG.extraction;
+    if (this.infected.filter((i) => !i.dead).length >= X.reinforceMaxAlive) return;
+    const T = CONFIG.tile;
+    const far = REINFORCEMENT_TILES.map(([tx, ty]) => ({ x: tx * T + T / 2, y: ty * T + T / 2 })).filter(
+      (p) => Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) >= X.reinforceMinDistance,
+    );
+    if (!far.length) return;
+    const p = far[Math.floor(Math.random() * far.length)];
+    const inf = this.spawnInfected(p.x, p.y);
+    const t = this.terminalPos();
+    inf.hear(t.x, t.y, CONFIG.noise.quayWaiting);
   }
 
   private inTrainZone(x: number, y: number): boolean {
@@ -483,6 +683,9 @@ export class MissionScene extends Phaser.Scene {
     return {
       hp: this.hp,
       maxHp: CONFIG.player.maxHp,
+      stamina: this.stamina,
+      maxStamina: CONFIG.player.stamina.max,
+      exhausted: this.exhausted,
       weapon: gameState.weapon,
       butin: { ...gameState.butin },
       extraction: this.callEndsAt === null ? null : Math.max(0, Math.ceil((this.callEndsAt - time) / 1000)),

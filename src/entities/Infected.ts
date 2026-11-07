@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
+import { Animator, setupCharacter } from '../render/characters';
 import type { Nav } from '../world/nav';
+import { HpBar } from './HpBar';
 import { PathMover } from './PathMover';
 
 export type Phase = 'day' | 'dusk' | 'night';
@@ -9,6 +11,7 @@ export interface InfectedContext {
   nav: Nav;
   player: Phaser.GameObjects.Sprite;
   phase: () => Phase;
+  sprinting: () => boolean;
   hitPlayer: (damage: number, fromX: number, fromY: number) => void;
 }
 
@@ -18,8 +21,9 @@ type Mode = 'wander' | 'investigate' | 'chase';
  * L'unique type d'infecté du prototype.
  * - Il erre autour de son point d'origine.
  * - Il se dirige vers un bruit à portée, puis s'y attarde.
- * - Il poursuit le joueur qu'il voit (portée selon le jour ou la nuit),
- *   l'abandonne s'il le perd de vue, et continue par toute entrée ouverte.
+ * - Il poursuit le joueur qu'il voit (portée selon le jour ou la nuit, plus
+ *   grande si le joueur court), l'abandonne s'il le perd de vue, et continue
+ *   par toute entrée ouverte.
  */
 export class Infected extends Phaser.Physics.Arcade.Sprite {
   hp = CONFIG.infected.hp;
@@ -27,6 +31,8 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
   mode: Mode = 'wander';
 
   private readonly mover = new PathMover();
+  private readonly animator: Animator;
+  private readonly bar: HpBar;
   private readonly home: Phaser.Math.Vector2;
   private readonly target = new Phaser.Math.Vector2();
   private readonly lastSeen = new Phaser.Math.Vector2();
@@ -36,14 +42,17 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
   private nextHeadingAt = 0;
   private knockUntil = 0;
   private nextHitAt = 0;
+  private attackUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, private readonly ctx: InfectedContext) {
-    super(scene, x, y, 'infected');
+    super(scene, x, y, 'zombie', 0);
     scene.add.existing(this);
     scene.physics.add.existing(this);
-    (this.body as Phaser.Physics.Arcade.Body).setSize(10, 10).setOffset(3, 3);
-    this.setDepth(8);
+    setupCharacter(this);
+    this.animator = new Animator(this, 'zombie');
+    this.bar = new HpBar(scene);
     this.home = new Phaser.Math.Vector2(x, y);
+    this.syncVisual();
   }
 
   /** Un bruit retentit : l'infecté à portée va voir (sauf s'il poursuit déjà le joueur). */
@@ -64,6 +73,7 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
     });
     if (this.hp <= 0) {
       this.dead = true;
+      this.bar.destroy();
       this.disableBody(true, true);
       return;
     }
@@ -74,8 +84,22 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
     this.loseMs = 0;
   }
 
+  preUpdate(time: number, delta: number): void {
+    super.preUpdate(time, delta);
+    if (!this.dead) this.syncVisual();
+  }
+
+  /** Profondeur selon les pieds (les toits des bâtiments fermés passent devant) et barre de vie. */
+  private syncVisual(): void {
+    this.setDepth(this.y);
+    const top = this.y - this.displayHeight * CONFIG.sprites.originY;
+    this.bar.set(this.x, top - 2.5, this.hp / CONFIG.infected.hp, this.y);
+  }
+
   think(now: number, dt: number): void {
-    if (this.dead || now < this.knockUntil) return;
+    if (this.dead) return;
+    const vel = this.body as Phaser.Physics.Arcade.Body;
+    if (now < this.knockUntil) return;
     const C = CONFIG.infected;
     const { nav, player } = this.ctx;
     const night = this.ctx.phase() === 'night';
@@ -83,10 +107,14 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
 
     if (d <= C.contactRange && now >= this.nextHitAt) {
       this.nextHitAt = now + C.contactCooldownMs;
+      this.attackUntil = now + 520;
+      this.setFlipX(player.x < this.x);
+      this.play('zombie-attack', true);
       this.ctx.hitPlayer(C.contactDamage, this.x, this.y);
     }
 
-    const detect = night ? C.detectionRadiusNight : C.detectionRadiusDay;
+    let detect = night ? C.detectionRadiusNight : C.detectionRadiusDay;
+    if (this.ctx.sprinting()) detect *= C.sprintDetectionFactor;
     const sees = d <= detect && nav.los(this.x, this.y, player.x, player.y);
     if (sees) {
       if (this.mode !== 'chase') this.mover.reset();
@@ -123,6 +151,8 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
       default:
         this.wander(now);
     }
+
+    if (now >= this.attackUntil) this.animator.update(vel.velocity.x, vel.velocity.y);
   }
 
   private beginInvestigate(x: number, y: number): void {
@@ -146,6 +176,5 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
     }
     const s = CONFIG.infected.wanderSpeed;
     this.setVelocity(this.heading.x * s, this.heading.y * s);
-    if (this.heading.lengthSq() > 0) this.rotation = this.heading.angle();
   }
 }

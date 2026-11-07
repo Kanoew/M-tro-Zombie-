@@ -17,6 +17,7 @@ export interface Stock {
 export const emptyStock = (): Stock => ({ materials: 0, valuables: 0, rare: 0 });
 
 export const gameState = {
+  character: 'joanna' as 'joanna',
   weapon: 'Épée',
   stock: emptyStock(),
   butin: emptyStock(),

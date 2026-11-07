@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
+import { Animator, setupCharacter } from '../render/characters';
 import type { Nav } from '../world/nav';
 import { PathMover } from './PathMover';
 
@@ -7,6 +8,7 @@ import { PathMover } from './PathMover';
 export class Companion extends Phaser.Physics.Arcade.Sprite {
   following = false;
   private readonly mover = new PathMover();
+  private readonly animator: Animator;
 
   constructor(
     scene: Phaser.Scene,
@@ -14,24 +16,28 @@ export class Companion extends Phaser.Physics.Arcade.Sprite {
     y: number,
     private readonly ctx: { nav: Nav; player: Phaser.GameObjects.Sprite },
   ) {
-    super(scene, x, y, 'npc');
+    super(scene, x, y, 'mecano_walk', 0);
     scene.add.existing(this);
     scene.physics.add.existing(this);
-    (this.body as Phaser.Physics.Arcade.Body).setSize(10, 10).setOffset(3, 3);
-    this.setDepth(9);
+    setupCharacter(this);
+    this.animator = new Animator(this, 'mecano');
+    this.setDepth(this.y);
   }
 
   think(now: number): void {
+    const body = this.body as Phaser.Physics.Arcade.Body;
     if (!this.following) {
       this.setVelocity(0, 0);
-      return;
-    }
-    const { nav, player } = this.ctx;
-    const d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
-    if (d > CONFIG.companion.followDistance) {
-      this.mover.moveTo(this, nav, player.x, player.y, CONFIG.player.speed * CONFIG.companion.speedFactor, now, 350);
     } else {
-      this.setVelocity(0, 0);
+      const { nav, player } = this.ctx;
+      const d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
+      if (d > CONFIG.companion.followDistance) {
+        this.mover.moveTo(this, nav, player.x, player.y, CONFIG.player.speed * CONFIG.companion.speedFactor, now, 350);
+      } else {
+        this.setVelocity(0, 0);
+      }
     }
+    this.animator.update(body.velocity.x, body.velocity.y);
+    this.setDepth(this.y);
   }
 }

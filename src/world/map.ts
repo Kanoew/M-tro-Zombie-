@@ -1,3 +1,5 @@
+import { CONFIG } from '../config';
+
 export type Tile = 'wall' | 'street' | 'floor' | 'quay';
 export type EntityKind = 'door' | 'crate' | 'terminal' | 'npc' | 'spawn' | 'infected';
 
@@ -10,31 +12,80 @@ export interface Entity {
   open?: boolean;
   /** Portes uniquement : coincée, la forcer fait du bruit. */
   forced?: boolean;
+  /** Bâtiment qui contient l'entité (absent dans la rue). */
+  building?: string;
 }
 
-/** Zone d'embarquement de la rame, en tuiles (bornes incluses). */
-export const TRAIN_ZONE = { x0: 14, y0: 32, x1: 26, y1: 33 };
+export interface Building {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  door: [number, number];
+  forced: boolean;
+  open: boolean;
+}
 
 export interface MapData {
   width: number;
   height: number;
   tiles: Tile[][];
   entities: Entity[];
+  buildings: Building[];
 }
 
+/** Carte en paysage : 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur. */
+export const MAP_SIZE = { width: 96, height: 56 };
+
+/** Zone d'embarquement de la rame, en tuiles (bornes incluses). */
+export const TRAIN_ZONE = { x0: 60, y0: 50, x1: 90, y1: 52 };
+
+/** Borne du quai. */
+export const TERMINAL_TILE = { tx: 75, ty: 47 };
+
+/** Points d'entrée des renforts attirés par la rame (tuiles de rue, près des bords). */
+export const REINFORCEMENT_TILES: [number, number][] = [
+  [3, 17], [3, 38], [93, 17], [93, 38], [36, 17], [56, 38], [18, 40], [66, 17],
+];
+
+type Rng = () => number;
+
+/** Les bâtiments, rangée par rangée. Les portes donnent sur les rues. */
+const BUILDINGS: Omit<Building, 'open'>[] = [
+  // Rangée nord (portes au sud).
+  { id: 'garage', x: 2, y: 2, w: 14, h: 10, door: [8, 11], forced: false },
+  { id: 'clinique', x: 20, y: 2, w: 12, h: 10, door: [25, 11], forced: true },
+  { id: 'entrepot', x: 37, y: 2, w: 16, h: 10, door: [44, 11], forced: true },
+  { id: 'bar', x: 58, y: 2, w: 12, h: 10, door: [63, 11], forced: false },
+  { id: 'bureaux', x: 74, y: 2, w: 20, h: 10, door: [83, 11], forced: true },
+  // Rangée centrale (portes au sud).
+  { id: 'immeuble', x: 2, y: 20, w: 14, h: 12, door: [8, 31], forced: true },
+  { id: 'supermarche', x: 20, y: 20, w: 16, h: 12, door: [27, 31], forced: true },
+  { id: 'atelier', x: 41, y: 20, w: 14, h: 12, door: [47, 31], forced: true },
+  { id: 'hotel', x: 60, y: 20, w: 12, h: 12, door: [65, 31], forced: false },
+  { id: 'serveurs', x: 76, y: 20, w: 18, h: 12, door: [84, 31], forced: true },
+  // Rangée sud : refuge (porte ouverte à l'est), puis deux bâtiments (portes au nord).
+  { id: 'refuge', x: 2, y: 44, w: 13, h: 10, door: [14, 49], forced: false },
+  { id: 'depot', x: 20, y: 44, w: 16, h: 10, door: [27, 44], forced: true },
+  { id: 'commissariat', x: 38, y: 44, w: 15, h: 10, door: [45, 44], forced: true },
+];
+
 /**
- * Premier quartier du prototype : refuge, garage, quai, deux trajets de
- * retour (rue ouest, rue est) et la mécanicienne dans un atelier à sauver.
- * Les règles de mission n'ont pas besoin de connaître le rendu : tout passe
- * par ces données.
+ * Construit le quartier. La structure est fixe ; le contenu des bâtiments
+ * (pièce vide, caisses, infectés) est tiré à chaque sortie, donc on ne sait
+ * jamais ce qu'il y a derrière une porte fermée. L'atelier abrite toujours la
+ * mécanicienne.
  */
-export function buildMap(): MapData {
-  const width = 30;
-  const height = 36;
+export function buildMap(rng: Rng = Math.random): MapData {
+  const { width, height } = MAP_SIZE;
   const tiles: Tile[][] = Array.from({ length: height }, () =>
     Array.from({ length: width }, (): Tile => 'street'),
   );
   const entities: Entity[] = [];
+  const buildings: Building[] = [];
+  const taken = new Set<number>();
+  const key = (x: number, y: number) => y * width + x;
 
   for (let x = 0; x < width; x++) {
     tiles[0][x] = 'wall';
@@ -45,59 +96,114 @@ export function buildMap(): MapData {
     tiles[y][width - 1] = 'wall';
   }
 
-  const building = (
-    id: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    door: [number, number],
-    opts: { open?: boolean; forced?: boolean } = {},
-  ) => {
-    for (let ty = y; ty < y + h; ty++) {
-      for (let tx = x; tx < x + w; tx++) {
-        const edge = tx === x || ty === y || tx === x + w - 1 || ty === y + h - 1;
+  for (const b of BUILDINGS) {
+    const building: Building = { ...b, open: b.id === 'refuge' };
+    buildings.push(building);
+    for (let ty = b.y; ty < b.y + b.h; ty++) {
+      for (let tx = b.x; tx < b.x + b.w; tx++) {
+        const edge = tx === b.x || ty === b.y || tx === b.x + b.w - 1 || ty === b.y + b.h - 1;
         tiles[ty][tx] = edge ? 'wall' : 'floor';
       }
     }
-    tiles[door[1]][door[0]] = 'floor';
-    entities.push({ kind: 'door', id: `door-${id}`, tx: door[0], ty: door[1], ...opts });
-  };
-
-  // Garage (nord-ouest), visitable.
-  building('garage', 2, 2, 10, 7, [6, 8]);
-  // Entrepôt (nord-est).
-  building('entrepot', 18, 2, 9, 7, [22, 8], { forced: true });
-  // Immeuble ouest.
-  building('ouest', 2, 16, 10, 8, [6, 16], { forced: true });
-  // Atelier (est) : la mécanicienne attend à l'intérieur.
-  building('atelier', 19, 16, 8, 8, [22, 23], { forced: true });
-  // Refuge (sud-ouest) : porte ouverte au départ.
-  building('refuge', 1, 29, 9, 6, [9, 32], { open: true });
-
-  // Quai (sud-est).
-  for (let ty = 29; ty <= 33; ty++) {
-    for (let tx = 13; tx <= 27; tx++) tiles[ty][tx] = 'quay';
+    tiles[b.door[1]][b.door[0]] = 'floor';
+    entities.push({
+      kind: 'door',
+      id: `door-${b.id}`,
+      tx: b.door[0],
+      ty: b.door[1],
+      open: building.open,
+      forced: b.forced,
+      building: b.id,
+    });
   }
 
-  entities.push({ kind: 'spawn', id: 'spawn', tx: 3, ty: 32 });
-  entities.push({ kind: 'terminal', id: 'borne-quai', tx: 20, ty: 31 });
-  entities.push({ kind: 'npc', id: 'mecanicienne', tx: 22, ty: 19 });
+  // Quai (sud-est) : la rame s'y arrête, la borne est au nord.
+  for (let ty = 46; ty <= 53; ty++) {
+    for (let tx = 56; tx <= 93; tx++) {
+      tiles[ty][tx] = 'quay';
+    }
+  }
+  entities.push({ kind: 'terminal', id: 'borne-quai', tx: TERMINAL_TILE.tx, ty: TERMINAL_TILE.ty });
+  taken.add(key(TERMINAL_TILE.tx, TERMINAL_TILE.ty));
 
-  entities.push({ kind: 'crate', id: 'caisse-garage-1', tx: 4, ty: 4 });
-  entities.push({ kind: 'crate', id: 'caisse-garage-2', tx: 9, ty: 6 });
-  entities.push({ kind: 'crate', id: 'caisse-entrepot', tx: 24, ty: 4 });
-  entities.push({ kind: 'crate', id: 'caisse-atelier', tx: 25, ty: 21 });
-  entities.push({ kind: 'crate', id: 'caisse-rue', tx: 14, ty: 12 });
+  // Départ dans le refuge.
+  entities.push({ kind: 'spawn', id: 'spawn', tx: 4, ty: 49 });
+  taken.add(key(4, 49));
 
-  // Infectés : quelques-uns dans la rue, d'autres enfermés dans les bâtiments.
-  const spawns: [number, number][] = [
-    [14, 10], [14, 20], [16, 26], [6, 12], [24, 13], [12, 26], [28, 20], [20, 27], // rue
-    [8, 4], [20, 5], [20, 21], // garage, entrepôt, atelier
-  ];
-  spawns.forEach(([tx, ty], i) =>
-    entities.push({ kind: 'infected', id: `infecte-${i + 1}`, tx, ty }),
-  );
+  const pick = (min: number, max: number) => min + Math.floor(rng() * (max - min + 1));
 
-  return { width, height, tiles, entities };
+  /** Tuile libre à l'intérieur d'un bâtiment, loin de la porte. */
+  const freeInside = (b: Building): [number, number] | null => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const tx = pick(b.x + 1, b.x + b.w - 2);
+      const ty = pick(b.y + 1, b.y + b.h - 2);
+      if (Math.abs(tx - b.door[0]) + Math.abs(ty - b.door[1]) < 4) continue;
+      if (taken.has(key(tx, ty))) continue;
+      taken.add(key(tx, ty));
+      return [tx, ty];
+    }
+    return null;
+  };
+
+  let crateN = 0;
+  let infectedN = 0;
+  const addCrate = (tx: number, ty: number, building?: string) =>
+    entities.push({ kind: 'crate', id: `caisse-${++crateN}`, tx, ty, building });
+  const addInfected = (tx: number, ty: number, building?: string) =>
+    entities.push({ kind: 'infected', id: `infecte-${++infectedN}`, tx, ty, building });
+
+  for (const b of buildings) {
+    if (b.id === 'refuge') continue;
+    if (b.id === 'atelier') {
+      const npc = freeInside(b);
+      if (npc) entities.push({ kind: 'npc', id: 'mecanicienne', tx: npc[0], ty: npc[1], building: b.id });
+      for (let i = 0; i < 2; i++) {
+        const c = freeInside(b);
+        if (c) addCrate(c[0], c[1], b.id);
+      }
+      for (let i = 0; i < 2; i++) {
+        const z = freeInside(b);
+        if (z) addInfected(z[0], z[1], b.id);
+      }
+      continue;
+    }
+    const roll = rng();
+    if (roll < CONFIG.world.buildingEmptyChance) continue; // pièce vide
+    const infested = roll >= CONFIG.world.buildingEmptyChance + CONFIG.world.buildingLootChance;
+    const crates = infested ? pick(0, 2) : pick(1, 3);
+    for (let i = 0; i < crates; i++) {
+      const c = freeInside(b);
+      if (c) addCrate(c[0], c[1], b.id);
+    }
+    if (infested) {
+      for (let i = 0, n = pick(1, 3); i < n; i++) {
+        const z = freeInside(b);
+        if (z) addInfected(z[0], z[1], b.id);
+      }
+    }
+  }
+
+  /** Tuile de rue libre, loin du refuge et de la borne. */
+  const freeStreet = (): [number, number] | null => {
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const tx = pick(2, width - 3);
+      const ty = pick(2, height - 3);
+      if (tiles[ty][tx] !== 'street' || taken.has(key(tx, ty))) continue;
+      if (Math.hypot(tx - 4, ty - 49) < 16) continue; // pas dans le refuge
+      if (Math.hypot(tx - TERMINAL_TILE.tx, ty - TERMINAL_TILE.ty) < 6) continue; // ni sur la borne
+      taken.add(key(tx, ty));
+      return [tx, ty];
+    }
+    return null;
+  };
+  for (let i = 0; i < CONFIG.world.streetInfected; i++) {
+    const s = freeStreet();
+    if (s) addInfected(s[0], s[1]);
+  }
+  for (let i = 0; i < CONFIG.world.streetCrates; i++) {
+    const s = freeStreet();
+    if (s) addCrate(s[0], s[1]);
+  }
+
+  return { width, height, tiles, entities, buildings };
 }
