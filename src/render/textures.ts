@@ -63,6 +63,11 @@ export function createTextures(scene: Phaser.Scene): void {
     g.fillStyle(0xffb347).fillCircle(8, 8, 6);
     g.fillStyle(0x3a2200).fillRect(5, 6, 2, 2).fillRect(9, 6, 2, 2);
   });
+  make('infected', (g) => {
+    g.fillStyle(0x5fbf5f).fillCircle(8, 8, 6);
+    g.fillStyle(0x2a5a2a).fillCircle(8, 8, 3);
+    g.fillStyle(0xff3b3b).fillRect(10, 6, 3, 2).fillRect(10, 9, 3, 2);
+  });
   make('player', (g) => {
     g.fillStyle(0xeaf6ff).fillCircle(8, 8, 6);
     g.fillStyle(0xff4f8b).fillRect(8, 6, 6, 4);
