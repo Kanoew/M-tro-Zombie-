@@ -9,6 +9,9 @@ export interface HudData {
   /** Endurance épuisée : la course est bloquée jusqu'à récupération. */
   exhausted: boolean;
   weapon: string;
+  /** Phase du jour et temps écoulé depuis le départ du camp (secondes). */
+  phase: 'day' | 'dusk' | 'night';
+  elapsed: number;
   butin: Stock;
   /** Secondes restantes avant la fermeture des portes, ou null si la rame n'est pas appelée. */
   extraction: number | null;

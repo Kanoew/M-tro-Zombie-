@@ -5,8 +5,9 @@ export type Dir = 'down' | 'side' | 'up';
 
 /** Planches (colonnes x rangées) : rangées = face, profil droit, dos. */
 const SHEETS: { key: string; file: string; frameWidth: number; frameHeight: number }[] = [
-  { key: 'joanna_walk', file: 'joanna_walk.png', frameWidth: 120, frameHeight: 112 },
-  { key: 'joanna_idle', file: 'joanna_idle.png', frameWidth: 120, frameHeight: 112 },
+  { key: 'joanna_walk', file: 'joanna_walk.png', frameWidth: 150, frameHeight: 112 },
+  { key: 'joanna_idle', file: 'joanna_idle.png', frameWidth: 150, frameHeight: 112 },
+  { key: 'joanna_shoot', file: 'joanna_shoot.png', frameWidth: 150, frameHeight: 112 },
   { key: 'mecano_walk', file: 'mecano_walk.png', frameWidth: 120, frameHeight: 112 },
   { key: 'zombie', file: 'zombie.png', frameWidth: 124, frameHeight: 112 },
 ];
@@ -25,6 +26,10 @@ export const IMAGES: [string, string][] = [
   ['neon_shop', 'neon_shop.png'],
   ['banner', 'banner.png'],
   ['metro', 'metro.png'],
+  ['train', 'train.png'],
+  ['terminal_ring', 'terminal_ring.png'],
+  ['terminal_pillar', 'terminal_pillar.png'],
+  ['camp', 'camp.jpg'],
   ['menu_bg', 'menu_bg.jpg'],
   ['joanna_portrait', 'joanna_portrait.png'],
   ['joanna_face', 'joanna_face.png'],
@@ -74,6 +79,13 @@ export function createAnimations(scene: Phaser.Scene): void {
     });
   });
   anims.create({ key: 'zombie-attack', frames: row('zombie', 3), frameRate: 9, repeat: 0 });
+  // Tir à l'arc (profil droit) : 6 poses, la flèche part à la 4e.
+  anims.create({
+    key: 'joanna-shoot',
+    frames: anims.generateFrameNumbers('joanna_shoot', { start: 0, end: 5 }),
+    frameRate: 14,
+    repeat: 0,
+  });
 }
 
 /** Échelle, origine aux pieds et zone de collision d'un personnage peint. */

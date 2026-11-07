@@ -23,6 +23,19 @@ export class PathMover {
     now: number,
     repathMs = 400,
   ): boolean {
+    // Voie libre et proche : on marche droit sur la cible, sans suivre les cases de la grille.
+    const direct = Phaser.Math.Distance.Between(sprite.x, sprite.y, tx, ty);
+    if (direct < 240 && nav.clear(sprite.x, sprite.y, tx, ty)) {
+      this.path = [];
+      this.reachable = true;
+      this.nextRepathAt = 0;
+      if (direct < 3) {
+        sprite.setVelocity(0, 0);
+      } else {
+        sprite.setVelocity(((tx - sprite.x) / direct) * speed, ((ty - sprite.y) / direct) * speed);
+      }
+      return true;
+    }
     if (now >= this.nextRepathAt) {
       this.nextRepathAt = now + repathMs;
       const p = nav.path(sprite.x, sprite.y, tx, ty);

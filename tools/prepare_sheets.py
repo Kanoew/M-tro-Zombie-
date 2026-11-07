@@ -82,8 +82,13 @@ def resize_premult(img, size):
     return Image.fromarray(np.clip(b, 0, 255).astype(np.uint8), 'RGBA')
 
 
-def process_sheet(path, cols, rows, fig_h, cell_w, cell_h, ref_row=0):
-    """Renvoie la planche normalisée (cols x rows cases de cell_w x cell_h)."""
+def process_sheet(path, cols, rows, fig_h, cell_w, cell_h, ref_row=0, ref=None, anchor=0.55):
+    """Renvoie la planche normalisée (cols x rows cases de cell_w x cell_h).
+
+    ref : (rangée, colonne) d'une pose de référence dont la hauteur vaut fig_h (sinon la
+          hauteur médiane de la rangée ref_row). anchor : part haute du personnage utilisée
+          pour centrer la pose (0.25 = la tête, stable quand un bras tend l'arc en avant).
+    """
     sheet = Image.open(path).convert('RGBA')
     W, H = sheet.size
     frames = {}
@@ -96,15 +101,20 @@ def process_sheet(path, cols, rows, fig_h, cell_w, cell_h, ref_row=0):
             bb = cleaned.getbbox()
             frames[(r, c)] = cleaned.crop(bb)
     # Échelle commune : hauteur médiane des poses de la rangée de référence.
-    ref = sorted(f.size[1] for (r, _), f in frames.items() if r == ref_row)
-    scale = fig_h / ref[len(ref) // 2]
+    if ref is not None:
+        scale = fig_h / frames[ref].size[1]
+    else:
+        heights = sorted(f.size[1] for (r, _), f in frames.items() if r == ref_row)
+        scale = fig_h / heights[len(heights) // 2]
     out = Image.new('RGBA', (cols * cell_w, rows * cell_h), (0, 0, 0, 0))
+    widest = 0
     for (r, c), f in frames.items():
         w, h = max(1, round(f.size[0] * scale)), max(1, round(f.size[1] * scale))
+        widest = max(widest, w)
         f = resize_premult(f, (w, h))
         # Axe du corps : barycentre horizontal du haut du personnage (stable pendant la marche).
         a = np.array(f)[:, :, 3] > 40
-        top = a[: max(2, int(h * 0.55))]
+        top = a[: max(2, int(h * anchor))]
         xs = np.nonzero(top)[1]
         cx = float(xs.mean()) if len(xs) else w / 2
         ox = int(round(cell_w / 2 - cx))
@@ -112,6 +122,7 @@ def process_sheet(path, cols, rows, fig_h, cell_w, cell_h, ref_row=0):
         cell = Image.new('RGBA', (cell_w, cell_h), (0, 0, 0, 0))
         cell.paste(f, (ox, oy), f)
         out.paste(cell, (c * cell_w, r * cell_h))
+    print(f'  pose la plus large : {widest}px (case {cell_w}px)')
     return out, scale
 
 
@@ -137,18 +148,22 @@ def main():
     dst.mkdir(parents=True, exist_ok=True)
     jobs = [
         # nom de sortie, fichier source, colonnes, rangées, hauteur du personnage, case (l, h)
-        ('joanna_walk', '02-Joanna-Marche-corrigee.png', 4, 3, 100, 120, 112),
-        ('joanna_idle', '04-Joanna-Idle.png', 4, 3, 100, 120, 112),
+        ('joanna_walk', '02-Joanna-Marche-corrigee.png', 4, 3, 100, 150, 112),
+        ('joanna_idle', '04-Joanna-Idle.png', 4, 3, 100, 150, 112),
+        # Tir à l'arc : 3 colonnes x 2 rangées, profil droit. Échelle calée sur la dernière pose
+        # (au repos) ; centrage sur la tête, pour que le corps ne glisse pas pendant le tir.
+        ('joanna_shoot', '03-Joanna-Tir-a-l-arc.png', 3, 2, 100, 150, 112, {'ref': (1, 2), 'anchor': 0.25}),
         ('mecano_walk', 'mecano.webp', 4, 3, 96, 120, 112),
         ('zombie', 'zombie.webp', 4, 4, 92, 124, 112),
     ]
     portrait(src / '04-Joanna-Idle.png', dst)
-    for name, fname, cols, rows, fh, cw, ch in jobs:
+    for name, fname, cols, rows, fh, cw, ch, *extra in jobs:
         p = src / fname
         if not p.exists():
             print('absent :', p)
             continue
-        sheet, scale = process_sheet(p, cols, rows, fh, cw, ch)
+        print(name)
+        sheet, scale = process_sheet(p, cols, rows, fh, cw, ch, **(extra[0] if extra else {}))
         sheet.save(dst / f'{name}.png', optimize=True)
         print(f'{name}: {sheet.size} échelle {scale:.3f}')
 
