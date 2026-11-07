@@ -27,26 +27,62 @@ export interface Building {
   open: boolean;
 }
 
+/** Rectangle plein invisible (en px monde) : meubles du camp, qui bloquent le joueur et les infectés. */
+export interface Blocker {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface MapData {
   width: number;
   height: number;
   tiles: Tile[][];
   entities: Entity[];
   buildings: Building[];
+  blockers: Blocker[];
 }
 
 /** Carte en paysage : 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur. */
 export const MAP_SIZE = { width: 96, height: 56 };
 
-/** Zone d'embarquement de la rame, en tuiles (bornes incluses). */
-export const TRAIN_ZONE = { x0: 60, y0: 50, x1: 90, y1: 52 };
+/** Quai : une grande place au sud-est, avec l'entrée de métro au nord. */
+export const QUAY = { x0: 56, y0: 38, x1: 93, y1: 53 };
+
+/** Zone d'embarquement de la rame, en tuiles (bornes incluses), sous la borne. */
+export const TRAIN_ZONE = { x0: 62, y0: 46, x1: 73, y1: 52 };
 
 /** Borne du quai. */
-export const TERMINAL_TILE = { tx: 75, ty: 47 };
+export const TERMINAL_TILE = { tx: 68, ty: 43 };
+
+/**
+ * Le camp (refuge) : l'illustration est posée sur le bâtiment `refuge` et les gros
+ * meubles sont des zones de collision, décrites ici en pixels de l'image d'origine
+ * (2000 x 1116). L'illustration est étalée sur 20 tuiles de large.
+ */
+export const CAMP = { tx: 2, ty: 41, tilesWide: 20, imageWidth: 2000 };
+const CAMP_BLOCKS: [number, number, number, number][] = [
+  [95, 150, 700, 570], // rayonnages, caisses et bidons du nord-ouest
+  [0, 520, 340, 800], // plateforme et escalier ouest
+  [0, 780, 480, 1000], // bidons et conteneur au sud-ouest
+  [765, 110, 1500, 350], // passerelle, bureau aux casiers
+  [755, 350, 795, 640], // mur ouest du dortoir
+  [755, 350, 1260, 420], // mur nord du dortoir
+  [1215, 420, 1340, 670], // mur est du dortoir et bureau violet
+  [580, 590, 830, 800], // poste de travail bleu
+  [835, 690, 975, 775], // barrière de chantier gauche
+  [1105, 695, 1255, 790], // barrière de chantier droite
+  [1105, 175, 1385, 395], // établi
+  [1405, 285, 1495, 410], // râtelier
+  [1495, 100, 1590, 455], // escalier nord-est
+  [1590, 200, 1880, 505], // infirmerie
+  [1490, 520, 2000, 890], // groupes électrogènes
+];
 
 /** Points d'entrée des renforts attirés par la rame (tuiles de rue, près des bords). */
 export const REINFORCEMENT_TILES: [number, number][] = [
-  [3, 17], [3, 38], [93, 17], [93, 38], [36, 17], [56, 38], [18, 40], [66, 17],
+  [3, 17], [3, 38], [93, 17], [93, 36], [36, 17], [44, 37], [18, 40], [66, 17],
 ];
 
 type Rng = () => number;
@@ -65,10 +101,10 @@ const BUILDINGS: Omit<Building, 'open'>[] = [
   { id: 'atelier', x: 41, y: 20, w: 14, h: 12, door: [47, 31], forced: true },
   { id: 'hotel', x: 60, y: 20, w: 12, h: 12, door: [65, 31], forced: false },
   { id: 'serveurs', x: 76, y: 20, w: 18, h: 12, door: [84, 31], forced: true },
-  // Rangée sud : refuge (porte ouverte à l'est), puis deux bâtiments (portes au nord).
-  { id: 'refuge', x: 2, y: 44, w: 13, h: 10, door: [14, 49], forced: false },
-  { id: 'depot', x: 20, y: 44, w: 16, h: 10, door: [27, 44], forced: true },
-  { id: 'commissariat', x: 38, y: 44, w: 15, h: 10, door: [45, 44], forced: true },
+  // Rangée sud : le camp (portail ouvert au sud), puis deux bâtiments (portes au nord).
+  { id: 'refuge', x: 2, y: 41, w: 20, h: 10, door: [12, 50], forced: false },
+  { id: 'depot', x: 26, y: 41, w: 13, h: 10, door: [32, 41], forced: true },
+  { id: 'commissariat', x: 41, y: 41, w: 13, h: 10, door: [47, 41], forced: true },
 ];
 
 /**
@@ -106,6 +142,11 @@ export function buildMap(rng: Rng = Math.random): MapData {
       }
     }
     tiles[b.door[1]][b.door[0]] = 'floor';
+    if (b.id === 'refuge') {
+      // Le portail du camp est large de 3 tuiles.
+      tiles[b.door[1]][b.door[0] - 1] = 'floor';
+      tiles[b.door[1]][b.door[0] + 1] = 'floor';
+    }
     entities.push({
       kind: 'door',
       id: `door-${b.id}`,
@@ -118,17 +159,17 @@ export function buildMap(rng: Rng = Math.random): MapData {
   }
 
   // Quai (sud-est) : la rame s'y arrête, la borne est au nord.
-  for (let ty = 46; ty <= 53; ty++) {
-    for (let tx = 56; tx <= 93; tx++) {
+  for (let ty = QUAY.y0; ty <= QUAY.y1; ty++) {
+    for (let tx = QUAY.x0; tx <= QUAY.x1; tx++) {
       tiles[ty][tx] = 'quay';
     }
   }
   entities.push({ kind: 'terminal', id: 'borne-quai', tx: TERMINAL_TILE.tx, ty: TERMINAL_TILE.ty });
   taken.add(key(TERMINAL_TILE.tx, TERMINAL_TILE.ty));
 
-  // Départ dans le refuge.
-  entities.push({ kind: 'spawn', id: 'spawn', tx: 4, ty: 49 });
-  taken.add(key(4, 49));
+  // Départ dans le camp, devant le portail.
+  entities.push({ kind: 'spawn', id: 'spawn', tx: 12, ty: 49 });
+  taken.add(key(12, 49));
 
   const pick = (min: number, max: number) => min + Math.floor(rng() * (max - min + 1));
 
@@ -189,7 +230,7 @@ export function buildMap(rng: Rng = Math.random): MapData {
       const tx = pick(2, width - 3);
       const ty = pick(2, height - 3);
       if (tiles[ty][tx] !== 'street' || taken.has(key(tx, ty))) continue;
-      if (Math.hypot(tx - 4, ty - 49) < 16) continue; // pas dans le refuge
+      if (tx < 30 && ty > 34) continue; // pas devant le camp
       if (Math.hypot(tx - TERMINAL_TILE.tx, ty - TERMINAL_TILE.ty) < 6) continue; // ni sur la borne
       taken.add(key(tx, ty));
       return [tx, ty];
@@ -205,5 +246,15 @@ export function buildMap(rng: Rng = Math.random): MapData {
     if (s) addCrate(s[0], s[1]);
   }
 
-  return { width, height, tiles, entities, buildings };
+  const k = (CAMP.tilesWide * CONFIG.tile) / CAMP.imageWidth;
+  const ox = CAMP.tx * CONFIG.tile;
+  const oy = CAMP.ty * CONFIG.tile;
+  const blockers: Blocker[] = CAMP_BLOCKS.map(([x0, y0, x1, y1]) => ({
+    x: ox + x0 * k,
+    y: oy + y0 * k,
+    w: (x1 - x0) * k,
+    h: (y1 - y0) * k,
+  }));
+
+  return { width, height, tiles, entities, buildings, blockers };
 }

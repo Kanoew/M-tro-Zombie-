@@ -33,14 +33,6 @@ export const CONFIG = {
     range: 24, // px, du joueur au centre de l'objet
   },
 
-  attack: {
-    range: 26,
-    arcDuration: 140, // ms
-    cooldown: 350, // ms
-    damage: 15,
-    halfAngle: 1.0, // rad, demi-ouverture de l'arc
-  },
-
   // Lot 3 : jour et nuit (secondes depuis le départ du refuge).
   time: {
     duskAt: 390, // 6 min 30 : le talkie avertit, la lumière change

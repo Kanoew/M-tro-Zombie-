@@ -25,6 +25,18 @@ export class Nav {
       if (e.kind === 'door' && !e.open) this.closedDoors.add(this.key(e.tx, e.ty));
       if (e.kind === 'crate' || e.kind === 'terminal') this.solids.add(this.key(e.tx, e.ty));
     }
+    // Meubles du camp : toute tuile dont le centre tombe dans un bloc est pleine.
+    for (const b of map.blockers) {
+      for (let ty = Math.floor(b.y / tile); ty <= Math.floor((b.y + b.h) / tile); ty++) {
+        for (let tx = Math.floor(b.x / tile); tx <= Math.floor((b.x + b.w) / tile); tx++) {
+          const cx = tx * tile + tile / 2;
+          const cy = ty * tile + tile / 2;
+          if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h && this.inside(tx, ty)) {
+            this.solids.add(this.key(tx, ty));
+          }
+        }
+      }
+    }
   }
 
   private key(tx: number, ty: number): number {
@@ -66,6 +78,17 @@ export class Nav {
       if (this.opaque(this.tileOf(ax + (bx - ax) * t), this.tileOf(ay + (by - ay) * t))) {
         return false;
       }
+    }
+    return true;
+  }
+
+  /** Vrai si le segment ne traverse ni mur, ni porte fermée, ni objet plein : on peut y marcher droit. */
+  clear(ax: number, ay: number, bx: number, by: number): boolean {
+    const dist = Math.hypot(bx - ax, by - ay);
+    const steps = Math.max(1, Math.ceil(dist / 4));
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      if (this.blocked(this.tileOf(ax + (bx - ax) * t), this.tileOf(ay + (by - ay) * t))) return false;
     }
     return true;
   }

@@ -6,6 +6,8 @@ import { Controls } from '../input/Controls';
 import { Animator, NEON_KEYS, setupCharacter } from '../render/characters';
 import { createTextures } from '../render/textures';
 import {
+  currentWeapon,
+  cycleWeapon,
   describeStock,
   gameState,
   settleFailure,
@@ -13,8 +15,11 @@ import {
   startMission,
 } from '../state/gameState';
 import type { HudData, MissionEnd } from '../ui/events';
+import type { WeaponDef } from '../weapons';
 import {
   buildMap,
+  CAMP,
+  QUAY,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
   TRAIN_ZONE,
@@ -53,7 +58,8 @@ const labelOf = (it: Interactable) => (typeof it.label === 'function' ? it.label
  * les infectés, escorter la mécanicienne, appeler la rame et tenir 60 secondes.
  *
  * Les bâtiments fermés sont recouverts par leur toit : on ne sait pas ce
- * qu'il y a dedans tant que la porte n'est pas ouverte.
+ * qu'il y a dedans tant que la porte n'est pas ouverte. Le jour baisse au fil
+ * de la sortie (jour, crépuscule, nuit).
  *
  * Les règles (bruit, extraction, bilan) vivent ici et dans `state/` ; le rendu
  * et les entrées sont ailleurs (textures, Controls, UIScene).
@@ -68,13 +74,18 @@ export class MissionScene extends Phaser.Scene {
   private infected: Infected[] = [];
   private infectedGroup!: Phaser.Physics.Arcade.Group;
   private infectedCtx!: InfectedContext;
+  private arrows!: Phaser.Physics.Arcade.Group;
   private companion: Companion | null = null;
   private buildingViews = new Map<string, BuildingView>();
   private facing = new Phaser.Math.Vector2(1, 0);
   private lastPrompt: string | null = null;
   private nextAttackAt = 0;
+  private shootUntil = 0;
   private nextHudAt = 0;
   private now = 0;
+
+  private elapsed = 0;
+  private lastPhase: Phase = 'day';
 
   private hp = CONFIG.player.maxHp;
   private stamina = CONFIG.player.stamina.max;
@@ -86,8 +97,8 @@ export class MissionScene extends Phaser.Scene {
   private callEndsAt: number | null = null;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
-  private train!: Phaser.GameObjects.Rectangle;
-  private trainWindows!: Phaser.GameObjects.Rectangle;
+  private train!: Phaser.GameObjects.Image;
+  private trainBaseX = 0;
   private fog!: Phaser.GameObjects.TileSprite;
   private quayLights: Phaser.GameObjects.Arc[] = [];
 
@@ -101,6 +112,8 @@ export class MissionScene extends Phaser.Scene {
     startMission();
 
     this.ended = false;
+    this.elapsed = 0;
+    this.lastPhase = 'day';
     this.hp = CONFIG.player.maxHp;
     this.stamina = CONFIG.player.stamina.max;
     this.exhausted = false;
@@ -114,6 +127,7 @@ export class MissionScene extends Phaser.Scene {
     this.quayLights = [];
     this.lastPrompt = null;
     this.nextAttackAt = 0;
+    this.shootUntil = 0;
     this.nextHudAt = 0;
 
     const map = buildMap();
@@ -140,6 +154,7 @@ export class MissionScene extends Phaser.Scene {
 
     // Entités.
     this.infectedGroup = this.physics.add.group();
+    this.arrows = this.physics.add.group({ allowGravity: false });
     this.infectedCtx = {
       nav: this.nav,
       player: this.player,
@@ -160,6 +175,8 @@ export class MissionScene extends Phaser.Scene {
           break;
         case 'terminal':
           this.addStatic(solids, e, x, y, 'terminal', () => (this.callEndsAt === null ? 'Appeler la rame' : 'Rame en approche'), () => this.callTrain(), true);
+          // La borne est dessinée par le socle et le pilier peints (voir buildGround).
+          this.interactables[this.interactables.length - 1].sprite.setVisible(false);
           break;
         case 'npc':
           if (!gameState.rescued.mecanicienne) this.addCompanion(solids, e, x, y);
@@ -171,7 +188,7 @@ export class MissionScene extends Phaser.Scene {
       }
     }
     if (gameState.rescued.mecanicienne) {
-      const e: Entity = { kind: 'npc', id: 'mecanicienne-refuge', tx: 6, ty: 47 };
+      const e: Entity = { kind: 'npc', id: 'mecanicienne-refuge', tx: 15, ty: 48 };
       const mx = e.tx * T + T / 2;
       const my = e.ty * T + T / 2;
       const npc = this.add.sprite(mx, my, 'mecano_walk', 0).setScale(CONFIG.sprites.scale).setOrigin(0.5, CONFIG.sprites.originY).setDepth(my);
@@ -185,6 +202,14 @@ export class MissionScene extends Phaser.Scene {
     }
     this.physics.add.collider(this.infectedGroup, solids);
     this.physics.add.collider(this.infectedGroup, this.infectedGroup);
+
+    // Flèches : arrêtées par les murs, les portes fermées et les caisses ; blessent les infectés.
+    this.physics.add.overlap(this.arrows, solids, (arrow) => (arrow as Phaser.GameObjects.GameObject).destroy());
+    this.physics.add.overlap(this.arrows, this.infectedGroup, (arrow, inf) => {
+      const a = arrow as Phaser.Physics.Arcade.Sprite;
+      (inf as Infected).takeHit(a.getData('damage') as number, a.rotation, this.now);
+      a.destroy();
+    });
 
     this.physics.world.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setBounds(0, 0, worldW, worldH);
@@ -218,12 +243,27 @@ export class MissionScene extends Phaser.Scene {
     this.fog.tilePositionY += delta * 0.002;
     if (this.ended) return;
 
+    // Horloge du jour.
+    this.elapsed += delta / 1000;
+    const phase = this.phase();
+    if (phase !== this.lastPhase) {
+      this.lastPhase = phase;
+      this.game.events.emit('phase-change', { phase, elapsed: this.elapsed });
+      this.toast(
+        phase === 'dusk'
+          ? 'Talkie : « Le jour baisse. Il est temps de rentrer. »'
+          : 'Talkie : « La nuit est là. Ils entendent tout. »',
+      );
+    }
+
     // Déplacement, course et endurance.
+    const weapon = currentWeapon();
+    const shooting = time < this.shootUntil;
     const v = this.controls.vector;
     const moving = v.lengthSq() > 0.04;
     const st = CONFIG.player.stamina;
     if (this.exhausted && this.stamina >= st.exhaustedUntil) this.exhausted = false;
-    this.sprinting = moving && this.controls.sprintHeld && !this.exhausted && this.stamina > 0;
+    this.sprinting = moving && !shooting && this.controls.sprintHeld && !this.exhausted && this.stamina > 0;
     if (this.sprinting) {
       this.stamina = Math.max(0, this.stamina - (st.drain * delta) / 1000);
       this.lastSprintAt = time;
@@ -234,10 +274,11 @@ export class MissionScene extends Phaser.Scene {
     } else if (time - this.lastSprintAt >= st.regenDelayMs) {
       this.stamina = Math.min(st.max, this.stamina + (st.regen * delta) / 1000);
     }
-    const speed = CONFIG.player.speed * (this.sprinting ? CONFIG.player.sprintFactor : 1);
+    let speed = CONFIG.player.speed * (this.sprinting ? CONFIG.player.sprintFactor : 1);
+    if (shooting) speed *= weapon.moveFactor ?? 1;
     this.player.setVelocity(v.x * speed, v.y * speed);
-    if (moving) this.facing.copy(v).normalize();
-    this.playerAnim.update(v.x * speed, v.y * speed, this.sprinting ? 1.5 : 1);
+    if (moving && !shooting) this.facing.copy(v).normalize();
+    if (!shooting) this.playerAnim.update(v.x * speed, v.y * speed, this.sprinting ? 1.5 : 1);
     this.player.setDepth(this.player.y);
 
     const target = this.nearestInteractable();
@@ -247,11 +288,10 @@ export class MissionScene extends Phaser.Scene {
       this.game.events.emit('prompt', prompt);
     }
     if (this.controls.consumeInteract() && target) target.use();
-
-    if (this.controls.consumeAttack() && time >= this.nextAttackAt) {
-      this.nextAttackAt = time + CONFIG.attack.cooldown;
-      this.swing();
+    if (this.controls.consumeSwitch() && gameState.loadout.length > 1) {
+      this.toast(`Arme : ${cycleWeapon().name}`);
     }
+    if (this.controls.consumeAttack()) this.attack(time);
 
     for (const inf of this.infected) inf.think(time, delta);
     this.companion?.think(time);
@@ -263,14 +303,16 @@ export class MissionScene extends Phaser.Scene {
     }
   }
 
-  /** Lot 3 : l'horloge du jour fournira la phase. Pour l'instant, toujours le jour. */
+  /** Jour, crépuscule (le talkie prévient, la lumière change), nuit (ils entendent plus loin). */
   private phase(): Phase {
-    return 'day';
+    const t = CONFIG.time;
+    if (this.elapsed >= t.nightAt) return 'night';
+    return this.elapsed >= t.duskAt ? 'dusk' : 'day';
   }
 
   // --- Décor ---------------------------------------------------------------
 
-  /** Sol, sols intérieurs, murs, toits qui cachent les bâtiments, néons et ambiance. */
+  /** Sol, camp, murs, toits qui cachent les bâtiments, néons, quai et ambiance. */
   private buildGround(
     map: MapData,
     solids: Phaser.Physics.Arcade.StaticGroup,
@@ -281,16 +323,41 @@ export class MissionScene extends Phaser.Scene {
     this.add.tileSprite(0, 0, worldW, worldH, 'ground').setOrigin(0).setTileScale(0.36).setDepth(-20);
 
     // Quai.
-    this.add.tileSprite(56 * T, 46 * T, 38 * T, 8 * T, 'quay').setOrigin(0).setDepth(-10);
+    this.add
+      .tileSprite(QUAY.x0 * T, QUAY.y0 * T, (QUAY.x1 - QUAY.x0 + 1) * T, (QUAY.y1 - QUAY.y0 + 1) * T, 'quay')
+      .setOrigin(0)
+      .setDepth(-10);
 
-    // Murs (ceux des bâtiments restent cachés sous les toits tant qu'une porte est fermée).
+    // Murs : ceux des bâtiments restent cachés sous les toits tant qu'une porte est fermée ;
+    // ceux du camp sont invisibles (l'illustration les remplace) mais bloquent.
+    const camp = map.buildings.find((b) => b.id === 'refuge');
     for (let ty = 0; ty < map.height; ty++) {
       for (let tx = 0; tx < map.width; tx++) {
-        if (map.tiles[ty][tx] === 'wall') solids.create(tx * T + T / 2, ty * T + T / 2, 'wall').setDepth(0);
+        if (map.tiles[ty][tx] !== 'wall') continue;
+        const w = solids.create(tx * T + T / 2, ty * T + T / 2, 'wall').setDepth(0);
+        const inCamp = camp && tx >= camp.x && tx < camp.x + camp.w && ty >= camp.y && ty < camp.y + camp.h;
+        if (inCamp) w.setVisible(false);
       }
     }
 
+    // Le camp : l'illustration couvre le bâtiment ; ses gros meubles bloquent le passage.
+    const campW = CAMP.tilesWide * T;
+    const campSrc = this.textures.get('camp').getSourceImage();
+    this.add
+      .image(CAMP.tx * T, CAMP.ty * T, 'camp')
+      .setOrigin(0)
+      .setDisplaySize(campW, (campW * campSrc.height) / campSrc.width)
+      .setDepth(-9);
+    for (const b of map.blockers) {
+      const blk = solids.create(b.x + b.w / 2, b.y + b.h / 2, 'wall');
+      blk.setVisible(false).setDisplaySize(b.w, b.h).refreshBody();
+    }
+
     map.buildings.forEach((b, i) => {
+      if (b.id === 'refuge') {
+        this.buildingViews.set(b.id, { roof: null as never, trim: null as never, revealed: true });
+        return;
+      }
       const px = b.x * T;
       const py = b.y * T;
       const pw = b.w * T;
@@ -311,46 +378,54 @@ export class MissionScene extends Phaser.Scene {
           repeatDelay: Phaser.Math.Between(900, 4200),
         });
       };
-      if (b.id !== 'refuge') {
-        const roof = this.add
-          .tileSprite(px, py, pw, ph, i % 2 ? 'roof_a' : 'roof_b')
-          .setOrigin(0)
-          .setTileScale(0.3)
-          .setTint(0xa79cc4)
-          .setDepth(bottom);
-        const trim = this.add
-          .rectangle(px + pw / 2, py + ph / 2, pw - 1.5, ph - 1.5)
-          .setStrokeStyle(1.4, color, 0.95)
-          .setDepth(bottom + 0.1);
-        this.buildingViews.set(b.id, { roof, trim, revealed: false });
-        sign(NEON_KEYS[i % NEON_KEYS.length], px + pw * 0.22, bottom - 20, 0.2);
-        sign(NEON_KEYS[(i + 3) % NEON_KEYS.length], px + pw * 0.78, bottom - 20, 0.2);
-      } else {
-        this.buildingViews.set(b.id, { roof: null as never, trim: null as never, revealed: true });
-      }
+      const roof = this.add
+        .tileSprite(px, py, pw, ph, i % 2 ? 'roof_a' : 'roof_b')
+        .setOrigin(0)
+        .setTileScale(0.3)
+        .setTint(0xa79cc4)
+        .setDepth(bottom);
+      const trim = this.add
+        .rectangle(px + pw / 2, py + ph / 2, pw - 1.5, ph - 1.5)
+        .setStrokeStyle(1.4, color, 0.95)
+        .setDepth(bottom + 0.1);
+      this.buildingViews.set(b.id, { roof, trim, revealed: false });
+      sign(NEON_KEYS[i % NEON_KEYS.length], px + pw * 0.22, bottom - 20, 0.2);
+      sign(NEON_KEYS[(i + 3) % NEON_KEYS.length], px + pw * 0.78, bottom - 20, 0.2);
     });
 
-    // Entrée de métro au-dessus de la borne, bannières de quarantaine, lumières de secours.
+    // Quai : entrée de métro au nord, borne au centre (socle posé au sol, pilier par-dessus).
     const tx = TERMINAL_TILE.tx * T + T / 2;
-    this.add.image(tx, 46 * T + 4, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth(46 * T - 1);
-    const banners: [number, number][] = [[36, 17], [62, 38], [12, 38], [90, 42], [30, 54]];
+    const ty = TERMINAL_TILE.ty * T + T / 2;
+    this.add.image(tx, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
+    this.add.image(tx, ty, 'terminal_ring').setScale(0.2).setDepth(-8);
+    this.add.image(tx, ty + 2, 'terminal_pillar').setOrigin(0.497, 0.868).setScale(0.2).setDepth(ty + 2);
+
+    // Bannières de quarantaine, lumières de secours.
+    const banners: [number, number][] = [[36, 17], [62, 39], [12, 38], [90, 42], [30, 54]];
     for (const [bx, by] of banners) {
       this.add.image(bx * T, by * T, 'banner').setScale(0.3).setDepth(by * T);
     }
-    for (const [lx, ly] of [[58, 48], [91, 48]] as [number, number][]) {
+    for (const [lx, ly] of [[58, 44], [91, 44]] as [number, number][]) {
       const light = this.add.circle(lx * T, ly * T, 22, 0xff2a2a, 0.2).setBlendMode(Phaser.BlendModes.ADD).setDepth(3000);
       this.tweens.add({ targets: light, alpha: { from: 0.05, to: 0.35 }, duration: 700, yoyo: true, repeat: -1 });
       this.quayLights.push(light);
     }
 
-    // Rame (visible une fois appelée).
+    // Rame (détourée de l'illustration) : elle arrive du bord droit quand on l'appelle.
     const z = TRAIN_ZONE;
-    const zw = (z.x1 - z.x0 + 1) * T;
-    const zh = (z.y1 - z.y0 + 1) * T;
-    const zx = z.x0 * T + zw / 2;
-    const zy = z.y0 * T + zh / 2;
-    this.train = this.add.rectangle(zx, zy, zw, zh, 0x2e3a52).setStrokeStyle(1.4, 0x58d0ff).setDepth(1).setAlpha(0);
-    this.trainWindows = this.add.rectangle(zx, z.y0 * T + 6, zw - 12, 4, 0xffe27a).setDepth(1.1).setAlpha(0);
+    this.add
+      .tileSprite(z.x0 * T, z.y0 * T - 8, (z.x1 - z.x0 + 1) * T, 6, 'hazard')
+      .setOrigin(0)
+      .setDepth(-9);
+    const zx = ((z.x0 + z.x1 + 1) / 2) * T;
+    const zBottom = (z.y1 + 1) * T - 4;
+    this.trainBaseX = zx;
+    this.train = this.add
+      .image(zx, zBottom, 'train')
+      .setOrigin(0.5, 1)
+      .setScale(0.3)
+      .setAlpha(0)
+      .setDepth(z.y0 * T);
   }
 
   /** Lève le toit d'un bâtiment : son contenu apparaît. */
@@ -377,6 +452,7 @@ export class MissionScene extends Phaser.Scene {
     const sprite = solids.create(x, y, e.open ? 'door_open' : 'door') as Phaser.Physics.Arcade.Sprite;
     // Fermée, la porte reste visible au-dessus du toit ; ouverte, on passe par-dessus.
     sprite.setDepth(e.open ? -0.5 : bottom + 0.5);
+    if (e.building === 'refuge') sprite.setVisible(false); // le portail est dans l'illustration
     const it: Interactable = {
       entity: e,
       sprite,
@@ -510,8 +586,18 @@ export class MissionScene extends Phaser.Scene {
     });
   }
 
-  private swing(): void {
-    const { range, arcDuration, halfAngle, damage } = CONFIG.attack;
+  /** Attaque avec l'arme équipée : coup à l'arc de cercle ou tir, selon `kind`. */
+  private attack(time: number): void {
+    const weapon = currentWeapon();
+    if (time < this.nextAttackAt) return;
+    this.nextAttackAt = time + weapon.cooldownMs;
+    if (weapon.noise > 0) this.emitNoise(this.player.x, this.player.y, weapon.noise, `arme-${weapon.id}`);
+    if (weapon.kind === 'melee') this.swing(weapon);
+    else this.shoot(weapon, time);
+  }
+
+  private swing(w: WeaponDef): void {
+    const halfAngle = w.halfAngle ?? 1;
     const angle = this.facing.angle();
     const px = this.player.x;
     const py = this.player.y;
@@ -519,20 +605,72 @@ export class MissionScene extends Phaser.Scene {
     const g = this.add.graphics().setDepth(3300);
     g.lineStyle(1, 0xeaf6ff, 0.9);
     g.beginPath();
-    g.arc(px, py - 8, range * 0.8, angle - halfAngle, angle + halfAngle);
+    g.arc(px, py - 8, w.range * 0.8, angle - halfAngle, angle + halfAngle);
     g.strokePath();
-    this.tweens.add({ targets: g, alpha: 0, duration: arcDuration, onComplete: () => g.destroy() });
+    this.tweens.add({ targets: g, alpha: 0, duration: w.swingMs ?? 140, onComplete: () => g.destroy() });
 
     for (const inf of this.infected) {
       if (inf.dead) continue;
-      if (Phaser.Math.Distance.Between(px, py, inf.x, inf.y) > range + 6) continue;
+      if (Phaser.Math.Distance.Between(px, py, inf.x, inf.y) > w.range + 6) continue;
       const toward = Math.atan2(inf.y - py, inf.x - px);
       if (Math.abs(Phaser.Math.Angle.Wrap(toward - angle)) <= halfAngle) {
-        inf.takeHit(damage, toward, this.now);
+        inf.takeHit(w.damage, toward, this.now);
       }
     }
     this.infected = this.infected.filter((i) => !i.dead);
-    this.game.events.emit('attack', { x: px, y: py, angle, range });
+    this.game.events.emit('attack', { x: px, y: py, angle, range: w.range });
+  }
+
+  /** Arme à distance : geste animé, puis la flèche part à la pose de relâchement. */
+  private shoot(w: WeaponDef, time: number): void {
+    const aim = this.aimDirection(w);
+    this.facing.copy(aim);
+    this.shootUntil = time + (w.gestureMs ?? 400);
+    this.player.setFlipX(aim.x < 0);
+    this.player.play('joanna-shoot', true);
+    this.time.delayedCall(w.windupMs ?? 200, () => {
+      if (!this.ended) this.fireProjectile(aim, w);
+    });
+    this.game.events.emit('attack', { x: this.player.x, y: this.player.y, angle: aim.angle(), range: w.range });
+  }
+
+  /** Visée assistée : l'infecté visible le plus proche dans le cône devant le joueur, sinon tout droit. */
+  private aimDirection(w: WeaponDef): Phaser.Math.Vector2 {
+    const base = this.facing.clone().normalize();
+    const px = this.player.x;
+    const py = this.player.y;
+    let best: Infected | null = null;
+    let bestDist = Infinity;
+    for (const inf of this.infected) {
+      if (inf.dead) continue;
+      const d = Phaser.Math.Distance.Between(px, py, inf.x, inf.y);
+      if (d > w.range + 16 || d >= bestDist) continue;
+      const off = Math.abs(Phaser.Math.Angle.Wrap(Math.atan2(inf.y - py, inf.x - px) - base.angle()));
+      if (off > (w.aimCone ?? 0.5)) continue;
+      if (!this.nav.los(px, py, inf.x, inf.y)) continue;
+      best = inf;
+      bestDist = d;
+    }
+    if (!best) return base;
+    // Petite avance sur une cible en mouvement : là où elle sera quand la flèche arrive.
+    const body = best.body as Phaser.Physics.Arcade.Body;
+    const flight = (w.windupMs ?? 0) / 1000 + bestDist / (w.projectileSpeed ?? 250);
+    return new Phaser.Math.Vector2(
+      best.x + body.velocity.x * flight - px,
+      best.y + body.velocity.y * flight - py,
+    ).normalize();
+  }
+
+  private fireProjectile(dir: Phaser.Math.Vector2, w: WeaponDef): void {
+    const speed = w.projectileSpeed ?? 250;
+    const arrow = this.arrows.create(this.player.x + dir.x * 10, this.player.y + dir.y * 10, 'arrow') as Phaser.Physics.Arcade.Sprite;
+    arrow.setRotation(dir.angle());
+    arrow.setDepth(this.player.y + 0.5);
+    arrow.setData('damage', w.damage);
+    arrow.setVelocity(dir.x * speed, dir.y * speed);
+    this.time.delayedCall((w.range / speed) * 1000, () => {
+      if (arrow.active) arrow.destroy();
+    });
   }
 
   private hitPlayer(damage: number, _fromX: number, _fromY: number): void {
@@ -564,21 +702,10 @@ export class MissionScene extends Phaser.Scene {
     this.emitNoise(t.x, t.y, CONFIG.noise.quayAnnouncement, 'annonce-quai', CONFIG.noise.quayVisual);
     this.toast(`Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`);
 
-    const slide = { dx: 140 };
-    const baseX = this.train.x;
-    this.train.setX(baseX + slide.dx);
-    this.trainWindows.setX(baseX + slide.dx);
-    this.tweens.add({ targets: [this.train, this.trainWindows], alpha: 1, duration: 900 });
-    this.tweens.add({
-      targets: slide,
-      dx: 0,
-      duration: 1400,
-      ease: 'Cubic.easeOut',
-      onUpdate: () => {
-        this.train.setX(baseX + slide.dx);
-        this.trainWindows.setX(baseX + slide.dx);
-      },
-    });
+    // La rame glisse jusqu'au quai.
+    this.train.setX(this.trainBaseX + 230);
+    this.tweens.add({ targets: this.train, alpha: 1, duration: 900 });
+    this.tweens.add({ targets: this.train, x: this.trainBaseX, duration: 1600, ease: 'Cubic.easeOut' });
     for (const light of this.quayLights) light.setAlpha(0.4);
   }
 
@@ -606,7 +733,7 @@ export class MissionScene extends Phaser.Scene {
     // Les portes clignotent sur les 10 dernières secondes.
     if (left < 10000) {
       const blink = Math.floor(left / 300) % 2 === 0;
-      this.train.setStrokeStyle(1.4, blink ? 0xff4f4f : 0x58d0ff);
+      this.train.setTint(blink ? 0xff8d8d : 0xffffff);
     }
     if (left <= 0) this.closeDoors();
   }
@@ -662,7 +789,7 @@ export class MissionScene extends Phaser.Scene {
       const lost = { ...gameState.butin };
       settleFailure();
       lines.push(`Butin perdu : ${describeStock(lost)}.`);
-      lines.push(`Acquis conservés : ${gameState.weapon}, stock ${describeStock(gameState.stock)}.`);
+      lines.push(`Acquis conservés : ${currentWeapon().name}, stock ${describeStock(gameState.stock)}.`);
       if (c) lines.push('Mécanicienne : toujours à sauver.');
     }
     const payload: MissionEnd = {
@@ -686,7 +813,9 @@ export class MissionScene extends Phaser.Scene {
       stamina: this.stamina,
       maxStamina: CONFIG.player.stamina.max,
       exhausted: this.exhausted,
-      weapon: gameState.weapon,
+      weapon: currentWeapon().name,
+      phase: this.phase(),
+      elapsed: this.elapsed,
       butin: { ...gameState.butin },
       extraction: this.callEndsAt === null ? null : Math.max(0, Math.ceil((this.callEndsAt - time) / 1000)),
       escort,

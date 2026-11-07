@@ -8,6 +8,8 @@
  *
  * Le lot 3 branchera la sauvegarde localStorage sur `gameState`.
  */
+import { CHARACTERS, WEAPONS, type CharacterId, type WeaponDef } from '../weapons';
+
 export interface Stock {
   materials: number;
   valuables: number;
@@ -17,12 +19,30 @@ export interface Stock {
 export const emptyStock = (): Stock => ({ materials: 0, valuables: 0, rare: 0 });
 
 export const gameState = {
-  character: 'joanna' as 'joanna',
-  weapon: 'Épée',
+  character: 'joanna' as CharacterId,
+  /** Armes possédées (acquis : conservées même après une mort). */
+  loadout: [...CHARACTERS.joanna.loadout],
+  equipped: 0,
   stock: emptyStock(),
   butin: emptyStock(),
   rescued: { mecanicienne: false },
 };
+
+export function selectCharacter(id: CharacterId): void {
+  gameState.character = id;
+  gameState.loadout = [...CHARACTERS[id].loadout];
+  gameState.equipped = 0;
+}
+
+export function currentWeapon(): WeaponDef {
+  return WEAPONS[gameState.loadout[gameState.equipped]];
+}
+
+/** Passe à l'arme suivante (sans effet avec une seule arme). */
+export function cycleWeapon(): WeaponDef {
+  gameState.equipped = (gameState.equipped + 1) % gameState.loadout.length;
+  return currentWeapon();
+}
 
 export function startMission(): void {
   gameState.butin = emptyStock();

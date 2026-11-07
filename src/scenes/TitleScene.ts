@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { gameState } from '../state/gameState';
+import { selectCharacter } from '../state/gameState';
 
 const FONT = 'monospace';
 
@@ -139,7 +139,7 @@ export class TitleScene extends Phaser.Scene {
   private start(): void {
     if (this.starting) return;
     this.starting = true;
-    gameState.character = 'joanna'; // seul personnage disponible pour l'instant
+    selectCharacter('joanna'); // seul personnage disponible pour l'instant
     this.cameras.main.fadeOut(350, 5, 7, 15);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('Mission'));
   }

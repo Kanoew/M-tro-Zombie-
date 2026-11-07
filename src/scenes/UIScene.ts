@@ -11,6 +11,37 @@ const RESULT_LOCK_MS = 700; // évite de fermer le bilan par un appui encore en 
 const BAR_X = 64 * K;
 const BAR_W = 130 * K;
 
+// Barre du jour (haut à droite) : jour, crépuscule, nuit.
+const DAY_W = 100 * K;
+const DAY_H = 6 * K;
+const DAY_SPAN = CONFIG.time.nightAt + 120; // la barre garde 2 min de nuit visibles
+
+/** Teinte de la lumière selon l'heure : blanche le jour, orangée au crépuscule, bleue la nuit. */
+const LIGHT_STOPS: [number, number][] = [
+  [0, 0xffffff],
+  [CONFIG.time.duskAt - 15, 0xffffff],
+  [CONFIG.time.duskAt + 40, 0xffc79a],
+  [CONFIG.time.nightAt - 5, 0xb98ab8],
+  [CONFIG.time.nightAt + 30, 0x6573b0],
+];
+
+function lightAt(elapsed: number): number {
+  const stops = LIGHT_STOPS;
+  if (elapsed <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) {
+    if (elapsed <= stops[i][0]) {
+      const [t0, c0] = stops[i - 1];
+      const [t1, c1] = stops[i];
+      const a = Phaser.Display.Color.IntegerToColor(c0);
+      const b = Phaser.Display.Color.IntegerToColor(c1);
+      const k = Math.round(((elapsed - t0) / (t1 - t0)) * 100);
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(a, b, 100, k);
+      return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+    }
+  }
+  return stops[stops.length - 1][1];
+}
+
 /**
  * Interface en portrait : joystick tactile (moitié gauche), boutons
  * d'attaque, d'interaction et de course, vie et endurance, butin, compte à
@@ -38,6 +69,9 @@ export class UIScene extends Phaser.Scene {
   private stShown = CONFIG.player.stamina.max;
 
   private rain!: Phaser.GameObjects.TileSprite;
+  private tint!: Phaser.GameObjects.Rectangle;
+  private dayMarker!: Phaser.GameObjects.Rectangle;
+  private dayLabel!: Phaser.GameObjects.Text;
   private flash!: Phaser.GameObjects.Rectangle;
 
   private resultLayer!: Phaser.GameObjects.Container;
@@ -67,7 +101,7 @@ export class UIScene extends Phaser.Scene {
     this.buildHud();
 
     this.timerText = this.add
-      .text(width - 8 * K, 8 * K, '', {
+      .text(width - 8 * K, 32 * K, '', {
         fontFamily: FONT,
         fontSize: `${16 * K}px`,
         color: '#ffe27a',
@@ -78,7 +112,7 @@ export class UIScene extends Phaser.Scene {
       .setVisible(false);
 
     this.toastText = this.add
-      .text(width / 2, 96 * K, '', {
+      .text(width / 2, 128 * K, '', {
         fontFamily: FONT,
         fontSize: `${12 * K}px`,
         color: '#ffffff',
@@ -209,6 +243,14 @@ export class UIScene extends Phaser.Scene {
     }
     this.rain = this.add.tileSprite(width / 2, height / 2, width, height, 'rain').setAlpha(0.2).setDepth(-5);
 
+    // Lumière du jour : multiplie l'image du monde (blanc = rien, orange = crépuscule, bleu = nuit).
+    this.tint = this.add
+      .rectangle(width / 2, height / 2, width, height, 0xffffff, 1)
+      .setBlendMode(Phaser.BlendModes.MULTIPLY)
+      .setDepth(-6)
+      // Le mélange « multiplier » n'est fiable qu'en WebGL : en rendu 2D (secours), pas de teinte.
+      .setVisible(this.game.renderer.type === Phaser.WEBGL);
+
     // Éclairs lointains : double éclat, rare.
     this.flash = this.add.rectangle(width / 2, height / 2, width, height, 0xcfd8ff, 0).setDepth(-4);
     const schedule = () => {
@@ -262,6 +304,22 @@ export class UIScene extends Phaser.Scene {
     this.stFill = this.add.rectangle(BAR_X, stY, BAR_W, stH, 0xf2d04a).setOrigin(0);
     this.add.text(BAR_X + 3 * K, stY + stH / 2, 'END', { fontFamily: FONT, fontSize: `${7 * K}px`, color: '#3b3200', fontStyle: 'bold' }).setOrigin(0, 0.5);
 
+    // Barre du jour : segments jour / crépuscule / nuit et curseur.
+    const dayX = this.scale.width - 8 * K - DAY_W;
+    const dayY = 12 * K;
+    const seg = (from: number, to: number, color: number) =>
+      this.add
+        .rectangle(dayX + (from / DAY_SPAN) * DAY_W, dayY, ((to - from) / DAY_SPAN) * DAY_W, DAY_H, color)
+        .setOrigin(0);
+    this.add.rectangle(dayX - 2 * K, dayY - 2 * K, DAY_W + 4 * K, DAY_H + 4 * K, 0x05070c, 0.9).setOrigin(0);
+    seg(0, CONFIG.time.duskAt, 0xf2c14e);
+    seg(CONFIG.time.duskAt, CONFIG.time.nightAt, 0xff7a2f);
+    seg(CONFIG.time.nightAt, DAY_SPAN, 0x4a5fc1);
+    this.dayMarker = this.add.rectangle(dayX, dayY - 3 * K, 2 * K, DAY_H + 6 * K, 0xffffff).setOrigin(0.5, 0);
+    this.dayLabel = this.add
+      .text(this.scale.width - 8 * K, dayY + DAY_H + 4 * K, 'JOUR', { fontFamily: FONT, fontSize: `${8 * K}px`, color: '#f2c14e' })
+      .setOrigin(1, 0);
+
     // Butin, survivante.
     this.hudText = this.add
       .text(8 * K, 78 * K, '', {
@@ -277,6 +335,11 @@ export class UIScene extends Phaser.Scene {
 
   private renderHud(h: HudData): void {
     this.hud = h;
+    this.tint.setFillStyle(lightAt(h.elapsed), 1);
+    const dayX = this.scale.width - 8 * K - DAY_W;
+    this.dayMarker.setX(dayX + Math.min(1, h.elapsed / DAY_SPAN) * DAY_W);
+    const phaseLabel = { day: ['JOUR', '#f2c14e'], dusk: ['CRÉPUSCULE', '#ff9a4a'], night: ['NUIT', '#8aa0ff'] }[h.phase];
+    this.dayLabel.setText(phaseLabel[0]).setColor(phaseLabel[1]);
     const escort = {
       none: '',
       waiting: '\nMÉCANICIENNE : À SAUVER',

@@ -17,13 +17,14 @@ export class Controls {
   private readonly shift: Phaser.Input.Keyboard.Key;
   private interactQueued = false;
   private attackQueued = false;
+  private switchQueued = false;
 
   constructor(scene: Phaser.Scene) {
     const kb = scene.input.keyboard;
     if (!kb) throw new Error('Clavier indisponible');
     this.keys = kb.addKeys('Z,Q,S,D,W,A,UP,DOWN,LEFT,RIGHT') as KeyMap;
     this.shift = kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
-    kb.addCapture('UP,DOWN,LEFT,RIGHT,SPACE');
+    kb.addCapture('UP,DOWN,LEFT,RIGHT,SPACE,TAB');
 
     // Actions sur événements : un appui très bref n'est jamais perdu.
     const onAction = (queue: () => void) => (ev: KeyboardEvent) => {
@@ -35,6 +36,7 @@ export class Controls {
     kb.on('keydown-SPACE', interact);
     kb.on('keydown-F', attack);
     kb.on('keydown-J', attack);
+    kb.on('keydown-TAB', onAction(() => this.queueSwitch()));
   }
 
   /** Course demandée (Maj au clavier, bouton COURIR au tactile). */
@@ -61,6 +63,16 @@ export class Controls {
 
   queueAttack(): void {
     this.attackQueued = true;
+  }
+
+  queueSwitch(): void {
+    this.switchQueued = true;
+  }
+
+  consumeSwitch(): boolean {
+    const v = this.switchQueued;
+    this.switchQueued = false;
+    return v;
   }
 
   consumeInteract(): boolean {
