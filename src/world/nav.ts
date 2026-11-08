@@ -39,6 +39,11 @@ export class Nav {
     }
   }
 
+  /** Obstacle posé en cours de partie (caisse de nuit). */
+  addSolid(tx: number, ty: number): void {
+    if (this.inside(tx, ty)) this.solids.add(this.key(tx, ty));
+  }
+
   private key(tx: number, ty: number): number {
     return ty * this.w + tx;
   }

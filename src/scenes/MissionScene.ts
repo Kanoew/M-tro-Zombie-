@@ -67,6 +67,9 @@ const labelOf = (it: Interactable) => (typeof it.label === 'function' ? it.label
  * Les règles (bruit, extraction, bilan) vivent ici et dans `state/` ; le rendu
  * et les entrées sont ailleurs (textures, Controls, UIScene).
  */
+/** 330 -> "5:30". */
+const clock = (sec: number): string => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+
 export class MissionScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private playerAnim!: Animator;
@@ -102,6 +105,8 @@ export class MissionScene extends Phaser.Scene {
   private callEndsAt: number | null = null;
   /** Vrai quand la rame qui attend est le premier métro du matin (bonus de survie). */
   private morningTrain = false;
+  private solids!: Phaser.Physics.Arcade.StaticGroup;
+  private nextWaveAt = 0;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
   private train!: Phaser.GameObjects.Image;
@@ -132,6 +137,7 @@ export class MissionScene extends Phaser.Scene {
     this.lastSprintAt = -99999;
     this.callEndsAt = null;
     this.morningTrain = false;
+    this.nextWaveAt = 0;
     this.interactables = [];
     this.infected = [];
     this.companion = null;
@@ -151,6 +157,7 @@ export class MissionScene extends Phaser.Scene {
     this.cameras.main.fadeIn(350, 5, 7, 15);
 
     const solids = this.physics.add.staticGroup();
+    this.solids = solids;
     this.buildGround(map, solids, worldW, worldH);
 
     // Joueur.
@@ -263,11 +270,12 @@ export class MissionScene extends Phaser.Scene {
       this.game.events.emit('phase-change', { phase, elapsed: this.elapsed });
       const talk: Record<Phase, string> = {
         day: '',
-        dusk: 'Talkie : « Le jour baisse. Dernier appel de la rame à 7:30. »',
-        night: 'Talkie : « Plus aucune rame. Tiens jusqu\'au premier métro, à l\'aube. »',
+        dusk: `Talkie : « Le jour baisse. Dernier appel de la rame à ${clock(CONFIG.time.lastCallAt)}. »`,
+        night: 'Talkie : « Plus aucune rame avant l\'aube. Des caisses de ravitaillement sont tombées dans la rue. »',
         dawn: 'Talkie : « Le premier métro arrive ! Monte, vite. »',
       };
       this.toast(talk[phase]);
+      if (phase === 'night') this.dropNightCrates();
       if (phase === 'dawn' && this.callEndsAt === null) this.callTrain(true);
     }
 
@@ -311,6 +319,7 @@ export class MissionScene extends Phaser.Scene {
     for (const inf of this.infected) inf.think(time, delta);
     this.companion?.think(time);
     this.updateExtraction(time);
+    this.updateNightWaves(time);
 
     if (time >= this.nextHudAt) {
       this.nextHudAt = time + 100;
@@ -493,18 +502,26 @@ export class MissionScene extends Phaser.Scene {
     this.interactables.push(it);
   }
 
-  private addCrate(solids: Phaser.Physics.Arcade.StaticGroup, e: Entity, x: number, y: number): void {
+  /** `night` : caisse de ravitaillement larguée à la tombée de la nuit (butin meilleur, lueur cyan). */
+  private addCrate(solids: Phaser.Physics.Arcade.StaticGroup, e: Entity, x: number, y: number, night = false): void {
     const sprite = solids.create(x, y, 'crate') as Phaser.Physics.Arcade.Sprite;
     sprite.setDepth(y);
+    let glow: Phaser.GameObjects.Arc | null = null;
+    if (night) {
+      sprite.setTint(0x8ff4ff);
+      glow = this.add.circle(x, y, 9, 0x35d6ff, 0.35).setDepth(y - 1).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: glow, alpha: { from: 0.15, to: 0.5 }, scale: { from: 0.9, to: 1.3 }, duration: 700, yoyo: true, repeat: -1 });
+    }
     const it: Interactable = {
       entity: e,
       sprite,
-      label: 'Fouiller la caisse',
+      label: night ? 'Fouiller la caisse de nuit' : 'Fouiller la caisse',
       active: true,
       use: () => {
         it.active = false;
         sprite.setTexture('crate_open');
-        const found = this.rollLoot();
+        glow?.destroy();
+        const found = this.rollLoot(night);
         this.emitNoise(x, y, CONFIG.noise.crateOpened, e.id);
         this.toast(`Caisse ouverte : ${found}. Ça fait du bruit.`);
       },
@@ -562,15 +579,17 @@ export class MissionScene extends Phaser.Scene {
     return inf;
   }
 
-  private rollLoot(): string {
+  private rollLoot(night = false): string {
     const L = CONFIG.loot;
+    const rareChance = night ? CONFIG.night.rareChance : L.rareChance;
+    const valuableChance = night ? CONFIG.night.valuableChance : L.valuableChance;
     const r = Math.random();
     const butin = gameState.butin;
-    if (r < L.rareChance) {
+    if (r < rareChance) {
       butin.rare += 1;
       return 'une pièce rare';
     }
-    if (r < L.rareChance + L.valuableChance) {
+    if (r < rareChance + valuableChance) {
       butin.valuables += 1;
       return 'un objet de valeur';
     }
@@ -775,10 +794,13 @@ export class MissionScene extends Phaser.Scene {
     if (left <= 0) this.closeDoors();
   }
 
-  /** Un nouvel infecté entre par un bord de carte, hors de vue, et file vers la borne. */
-  private spawnReinforcement(): void {
+  /**
+   * Un nouvel infecté entre par un bord de carte, hors de vue, et file vers la
+   * borne (ou vers `target` : la nuit, les alentours du joueur).
+   */
+  private spawnReinforcement(target?: { x: number; y: number }, maxAlive = CONFIG.extraction.reinforceMaxAlive): void {
     const X = CONFIG.extraction;
-    if (this.infected.filter((i) => !i.dead).length >= X.reinforceMaxAlive) return;
+    if (this.infected.filter((i) => !i.dead).length >= maxAlive) return;
     const T = CONFIG.tile;
     const far = REINFORCEMENT_TILES.map(([tx, ty]) => ({ x: tx * T + T / 2, y: ty * T + T / 2 })).filter(
       (p) => Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) >= X.reinforceMinDistance,
@@ -786,8 +808,48 @@ export class MissionScene extends Phaser.Scene {
     if (!far.length) return;
     const p = far[Math.floor(Math.random() * far.length)];
     const inf = this.spawnInfected(p.x, p.y);
-    const t = this.terminalPos();
+    const t = target ?? this.terminalPos();
     inf.hear(t.x, t.y, CONFIG.noise.quayWaiting);
+  }
+
+  // --- Nuit ----------------------------------------------------------------
+
+  /** La nuit, des rôdeurs arrivent en continu, de plus en plus vite jusqu'à l'aube. */
+  private updateNightWaves(time: number): void {
+    if (this.phase() !== 'night' || this.callEndsAt !== null) return;
+    if (time < this.nextWaveAt) return;
+    const N = CONFIG.night;
+    const t = CONFIG.time;
+    const k = Phaser.Math.Clamp((this.elapsed - t.nightAt) / (t.dawnAt - t.nightAt), 0, 1);
+    this.nextWaveAt = time + Phaser.Math.Linear(N.waveEveryStartMs, N.waveEveryEndMs, k);
+    const spread = N.waveTargetSpread;
+    const target = {
+      x: this.player.x + Phaser.Math.Between(-spread, spread),
+      y: this.player.y + Phaser.Math.Between(-spread, spread),
+    };
+    this.spawnReinforcement(target, N.waveMaxAlive);
+  }
+
+  /** À la tombée de la nuit, des caisses de ravitaillement apparaissent dans la rue. */
+  private dropNightCrates(): void {
+    const N = CONFIG.night;
+    const T = CONFIG.tile;
+    const { width, height, tiles } = this.map;
+    let placed = 0;
+    for (let attempt = 0; attempt < 400 && placed < N.crates; attempt++) {
+      const tx = Phaser.Math.Between(2, width - 3);
+      const ty = Phaser.Math.Between(2, height - 3);
+      if (tiles[ty][tx] !== 'street' || this.nav.blocked(tx, ty)) continue;
+      if (tx < 30 && ty > 34) continue; // pas devant le camp
+      if (Math.hypot(tx - TERMINAL_TILE.tx, ty - TERMINAL_TILE.ty) < 6) continue;
+      const x = tx * T + T / 2;
+      const y = ty * T + T / 2;
+      if (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < N.crateMinDistance) continue;
+      if (this.interactables.some((it) => Phaser.Math.Distance.Between(x, y, it.sprite.x, it.sprite.y) < 3 * T)) continue;
+      this.nav.addSolid(tx, ty);
+      this.addCrate(this.solids, { kind: 'crate', id: `caisse-nuit-${placed}`, tx, ty }, x, y, true);
+      placed++;
+    }
   }
 
   private inTrainZone(x: number, y: number): boolean {

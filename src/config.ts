@@ -33,18 +33,30 @@ export const CONFIG = {
     range: 24, // px, du joueur au centre de l'objet
   },
 
-  // Séance 2 : le dernier métro (secondes depuis le départ du refuge).
-  // Jour -> crépuscule -> dernier appel -> nuit sans rame -> premier métro du matin.
+  // Le dernier métro (secondes depuis le départ du refuge). Une partie dure moins de 10 min :
+  // 6 min 30 de jour, 2 min de nuit, 1 min pour monter dans le premier métro.
   time: {
-    duskAt: 390, // 6 min 30 : le talkie avertit, la lumière change
-    lastCallAt: 450, // 7 min 30 : dernier appel possible à la borne (la rame part au plus tard à 8 min 30)
-    nightAt: 510, // 8 min 30 : plus de rame, les infectés entendent plus loin
-    dawnAt: 780, // 13 min : le premier métro du matin arrive tout seul
+    duskAt: 300, // 5:00 : le talkie avertit, la lumière change
+    lastCallAt: 330, // 5:30 : dernier appel à la borne (la rame part au plus tard à 6:30)
+    nightAt: 390, // 6:30 : plus de rame, les infectés entendent plus loin, les vagues arrivent
+    dawnAt: 510, // 8:30 : le premier métro du matin arrive tout seul (portes fermées à 9:30)
+  },
+
+  // La nuit : des vagues d'infectés et des caisses de ravitaillement dans la rue.
+  night: {
+    waveEveryStartMs: 6000, // un rôdeur toutes les 6 s au début de la nuit...
+    waveEveryEndMs: 3000, // ... toutes les 3 s juste avant l'aube
+    waveMaxAlive: 14, // essai : un joueur immobile qui tire tient ~1 à 2 min ; en bougeant, la nuit se tient
+    waveTargetSpread: 200, // px : ils fouillent les alentours du joueur, pas sa position exacte
+    crates: 6, // caisses de nuit larguées dans la rue à la tombée de la nuit
+    crateMinDistance: 90, // px du joueur
+    rareChance: 0.25, // contre 0,08 pour une caisse normale
+    valuableChance: 0.4, // contre 0,27
   },
 
   // Survivre à la nuit et prendre le premier métro multiplie le butin ramené.
   morning: {
-    lootBonus: 1.5,
+    lootBonus: 2,
   },
 
   // Extraction. Horloge indépendante de celle du jour.
