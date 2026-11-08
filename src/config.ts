@@ -113,7 +113,7 @@ export const CONFIG = {
   // (255 CR en une sortie) : une très bonne sortie rapporte ~200 CR.
   economy: {
     sellPrices: { materials: 1, valuables: 12, rare: 40 }, // crédits par unité (matériaux : réservés au camp plus tard)
-    upgradeCosts: [80, 180, 320], // prix des niveaux 1, 2 et 3 : une dizaine de bonnes sorties pour tout débloquer
+    upgradeCosts: [150, 350, 600], // niveaux 1, 2, 3. Essais : 200 à 400 CR par sortie -> une dizaine de sorties pour tout débloquer
     hpPerLevel: 25, // 100 -> 125 -> 150 -> 175 PV
     staminaPerLevel: 25, // 100 -> 175 d'endurance
     bowDamagePerLevel: 4, // 20 -> 32 : au niveau 3, une flèche suffit (infecté : 30 PV)

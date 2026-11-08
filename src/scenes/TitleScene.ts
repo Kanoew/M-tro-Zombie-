@@ -141,6 +141,6 @@ export class TitleScene extends Phaser.Scene {
     this.starting = true;
     selectCharacter('joanna'); // seul personnage disponible pour l'instant
     this.cameras.main.fadeOut(350, 5, 7, 15);
-    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('Mission'));
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('Refuge'));
   }
 }
