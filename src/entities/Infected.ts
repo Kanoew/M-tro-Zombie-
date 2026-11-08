@@ -5,7 +5,8 @@ import type { Nav } from '../world/nav';
 import { HpBar } from './HpBar';
 import { PathMover } from './PathMover';
 
-export type Phase = 'day' | 'dusk' | 'night';
+/** 'dawn' : l'aube, après la nuit. Les infectés s'y comportent comme le jour. */
+export type Phase = 'day' | 'dusk' | 'night' | 'dawn';
 
 export interface InfectedContext {
   nav: Nav;

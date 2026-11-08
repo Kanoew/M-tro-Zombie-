@@ -10,7 +10,7 @@ export interface HudData {
   exhausted: boolean;
   weapon: string;
   /** Phase du jour et temps écoulé depuis le départ du camp (secondes). */
-  phase: 'day' | 'dusk' | 'night';
+  phase: 'day' | 'dusk' | 'night' | 'dawn';
   elapsed: number;
   butin: Stock;
   /** Secondes restantes avant la fermeture des portes, ou null si la rame n'est pas appelée. */

@@ -33,10 +33,18 @@ export const CONFIG = {
     range: 24, // px, du joueur au centre de l'objet
   },
 
-  // Lot 3 : jour et nuit (secondes depuis le départ du refuge).
+  // Séance 2 : le dernier métro (secondes depuis le départ du refuge).
+  // Jour -> crépuscule -> dernier appel -> nuit sans rame -> premier métro du matin.
   time: {
     duskAt: 390, // 6 min 30 : le talkie avertit, la lumière change
-    nightAt: 480, // 8 min : les infectés entendent plus loin
+    lastCallAt: 450, // 7 min 30 : dernier appel possible à la borne (la rame part au plus tard à 8 min 30)
+    nightAt: 510, // 8 min 30 : plus de rame, les infectés entendent plus loin
+    dawnAt: 780, // 13 min : le premier métro du matin arrive tout seul
+  },
+
+  // Survivre à la nuit et prendre le premier métro multiplie le butin ramené.
+  morning: {
+    lootBonus: 1.5,
   },
 
   // Extraction. Horloge indépendante de celle du jour.
@@ -89,11 +97,11 @@ export const CONFIG = {
     buildingLootChance: 0.4, // caisses seules ; le reste est infesté
   },
 
-  // Séance 1 : économie du refuge. Une caisse rapporte ~10 crédits en moyenne,
-  // une bonne sortie 50 à 80 : la première amélioration tombe après un retour.
+  // Économie du refuge. Rééquilibrée après le premier essai sur téléphone
+  // (255 CR en une sortie) : une très bonne sortie rapporte ~200 CR.
   economy: {
-    sellPrices: { materials: 3, valuables: 12, rare: 40 }, // crédits par unité
-    upgradeCosts: [40, 90, 160], // prix des niveaux 1, 2 et 3 de chaque amélioration
+    sellPrices: { materials: 1, valuables: 12, rare: 40 }, // crédits par unité (matériaux : réservés au camp plus tard)
+    upgradeCosts: [80, 180, 320], // prix des niveaux 1, 2 et 3 : une dizaine de bonnes sorties pour tout débloquer
     hpPerLevel: 25, // 100 -> 125 -> 150 -> 175 PV
     staminaPerLevel: 25, // 100 -> 175 d'endurance
     bowDamagePerLevel: 4, // 20 -> 32 : au niveau 3, une flèche suffit (infecté : 30 PV)

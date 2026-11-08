@@ -15,7 +15,7 @@ const BAR_W = 130 * K;
 // Barre du jour (haut à droite) : jour, crépuscule, nuit.
 const DAY_W = 100 * K;
 const DAY_H = 6 * K;
-const DAY_SPAN = CONFIG.time.nightAt + 120; // la barre garde 2 min de nuit visibles
+const DAY_SPAN = CONFIG.time.dawnAt + 60; // jour, crépuscule, nuit, puis une minute d'aube
 
 /** Teinte de la lumière selon l'heure : blanche le jour, orangée au crépuscule, bleue la nuit. */
 const LIGHT_STOPS: [number, number][] = [
@@ -24,6 +24,8 @@ const LIGHT_STOPS: [number, number][] = [
   [CONFIG.time.duskAt + 40, 0xffc79a],
   [CONFIG.time.nightAt - 5, 0xb98ab8],
   [CONFIG.time.nightAt + 30, 0x6573b0],
+  [CONFIG.time.dawnAt - 20, 0x6573b0],
+  [CONFIG.time.dawnAt + 25, 0xf3cfdc], // aube rosée
 ];
 
 function lightAt(elapsed: number): number {
@@ -332,7 +334,10 @@ export class UIScene extends Phaser.Scene {
     this.add.rectangle(dayX - 2 * K, dayY - 2 * K, DAY_W + 4 * K, DAY_H + 4 * K, 0x05070c, 0.9).setOrigin(0);
     seg(0, CONFIG.time.duskAt, 0xf2c14e);
     seg(CONFIG.time.duskAt, CONFIG.time.nightAt, 0xff7a2f);
-    seg(CONFIG.time.nightAt, DAY_SPAN, 0x4a5fc1);
+    seg(CONFIG.time.nightAt, CONFIG.time.dawnAt, 0x4a5fc1);
+    seg(CONFIG.time.dawnAt, DAY_SPAN, 0xffb3c7);
+    // Repère du dernier appel de la rame.
+    this.add.rectangle(dayX + (CONFIG.time.lastCallAt / DAY_SPAN) * DAY_W, dayY - 2 * K, 1 * K, DAY_H + 4 * K, 0xff3b3b).setOrigin(0.5, 0);
     this.dayMarker = this.add.rectangle(dayX, dayY - 3 * K, 2 * K, DAY_H + 6 * K, 0xffffff).setOrigin(0.5, 0);
     this.dayLabel = this.add
       .text(this.scale.width - 8 * K, dayY + DAY_H + 4 * K, 'JOUR', { fontFamily: FONT, fontSize: `${8 * K}px`, color: '#f2c14e' })
@@ -356,8 +361,17 @@ export class UIScene extends Phaser.Scene {
     this.tint.setFillStyle(lightAt(h.elapsed), 1);
     const dayX = this.scale.width - 8 * K - DAY_W;
     this.dayMarker.setX(dayX + Math.min(1, h.elapsed / DAY_SPAN) * DAY_W);
-    const phaseLabel = { day: ['JOUR', '#f2c14e'], dusk: ['CRÉPUSCULE', '#ff9a4a'], night: ['NUIT', '#8aa0ff'] }[h.phase];
-    this.dayLabel.setText(phaseLabel[0]).setColor(phaseLabel[1]);
+    const t = CONFIG.time;
+    const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+    // Le crépuscule annonce le dernier appel ; la nuit compte jusqu'au premier métro.
+    const labels: Record<HudData['phase'], [string, string]> = {
+      day: ['JOUR', '#f2c14e'],
+      dusk: h.elapsed < t.lastCallAt ? [`DERNIER APPEL ${clock(t.lastCallAt - h.elapsed)}`, '#ff9a4a'] : ['PLUS DE RAME', '#ff6b6b'],
+      night: [`NUIT · AUBE ${clock(t.dawnAt - h.elapsed)}`, '#8aa0ff'],
+      dawn: ['AUBE', '#ffb3c7'],
+    };
+    const [label, color] = labels[h.phase];
+    this.dayLabel.setText(label).setColor(color);
     const escort = {
       none: '',
       waiting: '\nMÉCANICIENNE : À SAUVER',
@@ -401,10 +415,10 @@ export class UIScene extends Phaser.Scene {
   private buildResultLayer(width: number, height: number): void {
     const shade = this.add.rectangle(width / 2, height / 2, width, height, 0x070b12, 0.88).setInteractive();
     this.resultTitle = this.add
-      .text(width / 2, height * 0.28, '', { fontFamily: FONT, fontSize: `${24 * K}px`, color: '#ffffff' })
+      .text(width / 2, height * 0.2, '', { fontFamily: FONT, fontSize: `${24 * K}px`, color: '#ffffff' })
       .setOrigin(0.5);
     this.resultBody = this.add
-      .text(width / 2, height * 0.37, '', {
+      .text(width / 2, height * 0.27, '', {
         fontFamily: FONT,
         fontSize: `${13 * K}px`,
         color: '#cfe9ee',
@@ -425,9 +439,9 @@ export class UIScene extends Phaser.Scene {
         .setOrigin(0.5);
       return [rect, text];
     };
-    const refuge = mkButton(height * 0.74 - 46 * K, 'REFUGE', 0xffd24a, () => this.openRefuge());
-    const again = mkButton(height * 0.74, 'REPARTIR', 0x58e6cc, () => this.requestRestart());
-    const menu = mkButton(height * 0.74 + 46 * K, 'MENU', 0x8fe8f5, () => this.requestMenu());
+    const refuge = mkButton(height * 0.8 - 46 * K, 'REFUGE', 0xffd24a, () => this.openRefuge());
+    const again = mkButton(height * 0.8, 'REPARTIR', 0x58e6cc, () => this.requestRestart());
+    const menu = mkButton(height * 0.8 + 46 * K, 'MENU', 0x8fe8f5, () => this.requestMenu());
     this.resultLayer = this.add
       .container(0, 0, [shade, this.resultTitle, this.resultBody, ...refuge, ...again, ...menu])
       .setVisible(false);

@@ -33,9 +33,19 @@ Les armes sont des données dans `src/weapons.ts` (dégâts, cadence, portée, *
 - **Joanna** part avec un arc : silencieux, deux flèches par infecté, geste animé (la flèche part à la pose de relâchement), déplacement ralenti pendant le geste, visée assistée dans un cône devant elle avec avance sur les cibles en mouvement. Les murs, portes fermées et caisses arrêtent les flèches. Munitions illimitées pour l'instant.
 - L'épée de mêlée existe dans les données (`epee`) : on peut la tester en ajoutant `'epee'` au `loadout`.
 
-## Jour, crépuscule, nuit
+## Le dernier métro (jour, crépuscule, nuit, aube)
 
-Horloge depuis le départ du camp (`time` dans `src/config.ts`) : le jour jusqu'à 6 min 30, le **crépuscule** (le talkie prévient, la lumière tourne à l'orange), la **nuit** à 8 min (lumière bleue ; les infectés entendent 1,6 fois plus loin, voient jusqu'à 220 px en ligne droite et courent plus vite). L'horloge de la rame est indépendante : un appel tardif se poursuit pendant la tombée de la nuit. La barre en haut à droite montre l'heure. La teinte de lumière demande WebGL (désactivée en rendu 2D de secours).
+Horloge depuis le départ du camp (`time` dans `src/config.ts`) :
+
+| Heure | Phase | Ce qui se passe |
+|---|---|---|
+| 0:00 | Jour | La borne appelle la rame normalement. |
+| 6:30 | Crépuscule | Le talkie prévient, la lumière tourne à l'orange. La barre affiche le compte à rebours du dernier appel. |
+| 7:30 | Dernier appel | Passé ce cap, la borne ne répond plus. Une rame appelée avant part au plus tard à 8:30. |
+| 8:30 | Nuit | Plus aucune rame. Les infectés entendent 1,6 fois plus loin, voient plus loin et courent plus vite. La barre compte jusqu'à l'aube. |
+| 13:00 | Aube | Le premier métro du matin arrive tout seul et attend 60 s. À bord à la fermeture : retour réussi, butin x1,5 (`morning.lootBonus`). Raté : échec. |
+
+Le repère rouge sur la barre du jour marque le dernier appel. La teinte de lumière demande WebGL (désactivée en rendu 2D de secours).
 
 ## Carte et décor
 
@@ -49,8 +59,8 @@ Horloge depuis le départ du camp (`time` dans `src/config.ts`) : le jour jusqu'
 ## Refuge et atelier (séance 1)
 
 - Le bilan propose **REFUGE**, **REPARTIR** et **MENU**. Clavier : `R` ouvre le refuge, `E` repart, `M` revient au menu.
-- Au refuge, le stock se **vend** en crédits (CR) : matériaux 3, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
-- L'**atelier** n'ouvre qu'une fois la mécanicienne ramenée. Trois améliorations, chacune sur 3 niveaux (40, 90, 160 CR) :
+- Au refuge, le stock se **vend** en crédits (CR) : matériaux 1, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
+- L'**atelier** n'ouvre qu'une fois la mécanicienne ramenée. Trois améliorations, chacune sur 3 niveaux (80, 180, 320 CR : une dizaine de bonnes sorties pour tout débloquer) :
   - **Vie** : +25 PV max par niveau (100 → 175)
   - **Endurance** : +25 par niveau (100 → 175)
   - **Arc** : +4 dégâts par flèche (20 → 32 ; au niveau 3, une flèche abat un infecté)
@@ -96,7 +106,7 @@ Le numéro de version (`package.json`) et l'heure du build s'affichent en bas à
 - [x] Lot 1 : déplacement, collisions et interactions dans le quartier.
 - [x] Lot 2 : bruit, infectés, sauvetage et extraction de 60 secondes.
 - [x] Hors lot : écran titre, grande carte cachée, course et endurance, renforts de la rame, sprites et décor peints.
-- [~] Lot 3 : jour, crépuscule et nuit ; refuge (vente, atelier à 3 améliorations) et sauvegarde locale faits. Restent le dernier métro (8 min 30, nuit sans rame, premier métro du matin) et le refuge en scène séparée.
+- [~] Lot 3 : jour, crépuscule et nuit ; refuge (vente, atelier à 3 améliorations) et sauvegarde locale faits. Dernier métro, nuit sans rame et premier métro du matin faits. Reste le refuge en scène séparée.
 - [ ] Lot 4 : campagne, nouveaux quartiers, commerce et améliorations rares.
 
 Règle de persistance : le **butin** (ramassé pendant la sortie) est perdu en cas d'échec ; les **acquis**
