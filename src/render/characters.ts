@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 
 export type Dir = 'down' | 'side' | 'up';
+export const INFECTED_SHEET = 'zombie-outlined';
+const ZOMBIE_SHEET = { key: 'zombie', file: 'zombie.png', frameWidth: 124, frameHeight: 112 };
 
 /** Planches (colonnes x rangées) : rangées = face, profil droit, dos. */
 const SHEETS: { key: string; file: string; frameWidth: number; frameHeight: number }[] = [
@@ -9,7 +11,7 @@ const SHEETS: { key: string; file: string; frameWidth: number; frameHeight: numb
   { key: 'joanna_idle', file: 'joanna_idle.png', frameWidth: 150, frameHeight: 112 },
   { key: 'joanna_shoot', file: 'joanna_shoot.png', frameWidth: 150, frameHeight: 112 },
   { key: 'mecano_walk', file: 'mecano_walk.png', frameWidth: 120, frameHeight: 112 },
-  { key: 'zombie', file: 'zombie.png', frameWidth: 124, frameHeight: 112 },
+  ZOMBIE_SHEET,
 ];
 
 export const IMAGES: [string, string][] = [
@@ -54,6 +56,7 @@ export function loadArt(scene: Phaser.Scene): void {
 
 /** Animations globales : `<perso>-walk|idle-<down|side|up>`, plus `zombie-attack`. */
 export function createAnimations(scene: Phaser.Scene): void {
+  createInfectedOutline(scene);
   const anims = scene.anims;
   const dirs: Dir[] = ['down', 'side', 'up'];
 
@@ -70,15 +73,15 @@ export function createAnimations(scene: Phaser.Scene): void {
       frameRate: 1,
       repeat: -1,
     });
-    anims.create({ key: `zombie-walk-${d}`, frames: row('zombie', r), frameRate: 6, repeat: -1 });
+    anims.create({ key: `zombie-walk-${d}`, frames: row(INFECTED_SHEET, r), frameRate: 6, repeat: -1 });
     anims.create({
       key: `zombie-idle-${d}`,
-      frames: [{ key: 'zombie', frame: r * 4 }],
+      frames: [{ key: INFECTED_SHEET, frame: r * 4 }],
       frameRate: 1,
       repeat: -1,
     });
   });
-  anims.create({ key: 'zombie-attack', frames: row('zombie', 3), frameRate: 9, repeat: 0 });
+  anims.create({ key: 'zombie-attack', frames: row(INFECTED_SHEET, 3), frameRate: 9, repeat: 0 });
   // Tir à l'arc (profil droit) : 6 poses, la flèche part à la 4e.
   anims.create({
     key: 'joanna-shoot',
@@ -88,9 +91,32 @@ export function createAnimations(scene: Phaser.Scene): void {
   });
 }
 
+/** Contour précalculé une fois, commun aux rendus Canvas et WebGL. */
+function createInfectedOutline(scene: Phaser.Scene): void {
+  const source = scene.textures.get(ZOMBIE_SHEET.key).getSourceImage() as HTMLImageElement;
+  const texture = scene.textures.createCanvas(INFECTED_SHEET, source.width, source.height)!;
+  const silhouette = document.createElement('canvas');
+  silhouette.width = source.width;
+  silhouette.height = source.height;
+  const mask = silhouette.getContext('2d')!;
+  mask.drawImage(source, 0, 0);
+  mask.globalCompositeOperation = 'source-in';
+  mask.fillStyle = '#ffc19d';
+  mask.fillRect(0, 0, source.width, source.height);
+
+  // La planche laisse au moins trois pixels transparents autour de chaque pose.
+  const ctx = texture.getContext();
+  for (const [x, y] of [[-3, 0], [3, 0], [0, -3], [0, 3], [-2, -2], [2, -2], [-2, 2], [2, 2]]) {
+    ctx.drawImage(silhouette, x, y);
+  }
+  ctx.drawImage(source, 0, 0);
+  texture.refresh();
+  scene.textures.addSpriteSheet(INFECTED_SHEET, texture, ZOMBIE_SHEET);
+}
+
 /** Échelle, origine aux pieds et zone de collision d'un personnage peint. */
-export function setupCharacter(sprite: Phaser.Physics.Arcade.Sprite): void {
-  const { scale, originY, bodySize } = CONFIG.sprites;
+export function setupCharacter(sprite: Phaser.Physics.Arcade.Sprite, scale = CONFIG.sprites.scale): void {
+  const { originY, bodySize } = CONFIG.sprites;
   sprite.setScale(scale);
   sprite.setOrigin(0.5, originY);
   const body = sprite.body as Phaser.Physics.Arcade.Body;
