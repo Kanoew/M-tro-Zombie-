@@ -4,6 +4,7 @@ import { Companion } from '../entities/Companion';
 import { Infected, type InfectedContext, type Phase } from '../entities/Infected';
 import { Controls } from '../input/Controls';
 import { Animator, NEON_KEYS, setupCharacter } from '../render/characters';
+import { drawMetroTracks, MetroView } from '../render/metro';
 import { showNoisePulse } from '../render/noisePulse';
 import { createTextures } from '../render/textures';
 import {
@@ -25,6 +26,7 @@ import {
   QUAY,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
+  TRAIN_DOOR,
   TRAIN_ZONE,
   type Entity,
   type MapData,
@@ -109,8 +111,9 @@ export class MissionScene extends Phaser.Scene {
   private nextWaveAt = 0;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
-  private train!: Phaser.GameObjects.Image;
-  private trainBaseX = 0;
+  private train!: MetroView;
+  private trainGate!: Phaser.Physics.Arcade.StaticBody;
+  private trainDoorsOpen = false;
   private fog!: Phaser.GameObjects.TileSprite;
   private quayLights: Phaser.GameObjects.Arc[] = [];
 
@@ -160,6 +163,11 @@ export class MissionScene extends Phaser.Scene {
     const solids = this.physics.add.staticGroup();
     this.solids = solids;
     this.buildGround(map, solids, worldW, worldH);
+    const d = TRAIN_DOOR;
+    const gate = solids.create(((d.x0 + d.x1 + 1) / 2) * T, (d.y + 0.5) * T, 'wall');
+    gate.setDisplaySize((d.x1 - d.x0 + 1) * T, T).setVisible(false).refreshBody();
+    this.trainGate = gate.body as Phaser.Physics.Arcade.StaticBody;
+    this.setTrainDoors(false);
 
     // Joueur.
     const spawnEnt = map.entities.find((e) => e.kind === 'spawn');
@@ -244,8 +252,7 @@ export class MissionScene extends Phaser.Scene {
     this.game.events.emit('prompt', null);
 
     // On descend de la rame : elle repart vers l'est.
-    this.train.setAlpha(1);
-    this.tweens.add({ targets: this.train, x: this.trainBaseX + 230, alpha: 0, delay: 900, duration: 1800, ease: 'Cubic.easeIn' });
+    this.train.depart();
     this.time.delayedCall(600, () =>
       this.toast(`La rame repart. Reviens appeler la borne avant ${clock(CONFIG.time.lastCallAt)}.`),
     );
@@ -314,7 +321,14 @@ export class MissionScene extends Phaser.Scene {
     if (this.controls.consumeAttack()) this.attack(time);
 
     for (const inf of this.infected) inf.think(time, delta);
-    this.companion?.think(time);
+    const c = this.companion;
+    if (c) {
+      // A l'entrée, la distance de suivi habituelle peut laisser la mécanicienne sur le quai.
+      const target = this.trainDoorsOpen && this.inTrainZone(this.player.x, this.player.y) && !this.inTrainZone(c.x, c.y)
+        ? { x: this.player.x, y: Math.max(this.player.y, (TRAIN_ZONE.y0 + 0.5) * CONFIG.tile) }
+        : undefined;
+      c.think(time, target);
+    }
     this.updateExtraction(time);
     this.updateNightWaves(time);
 
@@ -362,7 +376,7 @@ export class MissionScene extends Phaser.Scene {
       }
     }
 
-    // Obstacles décrits en px (aucun dans la rue depuis que le refuge est une scène à part).
+    // Obstacles de la voie, alignés sur la grille de navigation.
     for (const b of map.blockers) {
       const blk = solids.create(b.x + b.w / 2, b.y + b.h / 2, 'wall');
       blk.setVisible(false).setDisplaySize(b.w, b.h).refreshBody();
@@ -411,7 +425,8 @@ export class MissionScene extends Phaser.Scene {
     // Quai : entrée de métro au nord, borne au centre (socle posé au sol, pilier par-dessus).
     const tx = TERMINAL_TILE.tx * T + T / 2;
     const ty = TERMINAL_TILE.ty * T + T / 2;
-    this.add.image(tx, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
+    const entryX = ((TRAIN_DOOR.x0 + TRAIN_DOOR.x1 + 1) / 2) * T;
+    this.add.image(entryX, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
     this.add.image(tx, ty, 'terminal_ring').setScale(0.2).setDepth(-8);
     this.add.image(tx, ty + 2, 'terminal_pillar').setOrigin(0.497, 0.868).setScale(0.2).setDepth(ty + 2);
 
@@ -426,21 +441,8 @@ export class MissionScene extends Phaser.Scene {
       this.quayLights.push(light);
     }
 
-    // Rame (détourée de l'illustration) : elle arrive du bord droit quand on l'appelle.
-    const z = TRAIN_ZONE;
-    this.add
-      .tileSprite(z.x0 * T, z.y0 * T - 8, (z.x1 - z.x0 + 1) * T, 6, 'hazard')
-      .setOrigin(0)
-      .setDepth(-9);
-    const zx = ((z.x0 + z.x1 + 1) / 2) * T;
-    const zBottom = (z.y1 + 1) * T - 4;
-    this.trainBaseX = zx;
-    this.train = this.add
-      .image(zx, zBottom, 'train')
-      .setOrigin(0.5, 1)
-      .setScale(0.3)
-      .setAlpha(0)
-      .setDepth(z.y0 * T);
+    drawMetroTracks(this);
+    this.train = new MetroView(this);
   }
 
   /** Lève le toit d'un bâtiment : son contenu apparaît. */
@@ -710,7 +712,10 @@ export class MissionScene extends Phaser.Scene {
   }
 
   private terminalLabel(): string {
-    if (this.callEndsAt !== null) return this.morningTrain ? 'Premier métro à quai' : 'Rame en approche';
+    if (this.callEndsAt !== null) {
+      if (!this.trainDoorsOpen) return 'Rame en approche';
+      return this.morningTrain ? 'Premier métro à quai' : 'Rame à quai';
+    }
     return this.noMoreTrains() ? 'Plus de rame avant l\'aube' : 'Appeler la rame';
   }
 
@@ -737,10 +742,9 @@ export class MissionScene extends Phaser.Scene {
         : `Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`,
     );
 
-    // La rame glisse jusqu'au quai.
-    this.train.setX(this.trainBaseX + 230);
-    this.tweens.add({ targets: this.train, alpha: 1, duration: 900 });
-    this.tweens.add({ targets: this.train, x: this.trainBaseX, duration: 1600, ease: 'Cubic.easeOut' });
+    this.train.arrive(() => {
+      if (!this.ended) this.setTrainDoors(true);
+    });
     for (const light of this.quayLights) light.setAlpha(0.4);
   }
 
@@ -768,7 +772,7 @@ export class MissionScene extends Phaser.Scene {
     // Les portes clignotent sur les 10 dernières secondes.
     if (left < 10000) {
       const blink = Math.floor(left / 300) % 2 === 0;
-      this.train.setTint(blink ? 0xff8d8d : 0xffffff);
+      this.train.warn(blink);
     }
     if (left <= 0) this.closeDoors();
   }
@@ -831,6 +835,16 @@ export class MissionScene extends Phaser.Scene {
     }
   }
 
+  private setTrainDoors(open: boolean): void {
+    this.trainDoorsOpen = open;
+    this.trainGate.enable = !open;
+    const d = TRAIN_DOOR;
+    for (let tx = d.x0; tx <= d.x1; tx++) {
+      if (open) this.nav.openDoor(tx, d.y);
+      else this.nav.closeDoor(tx, d.y);
+    }
+  }
+
   private inTrainZone(x: number, y: number): boolean {
     const T = CONFIG.tile;
     const z = TRAIN_ZONE;
@@ -839,7 +853,10 @@ export class MissionScene extends Phaser.Scene {
 
   /** Fermeture des portes : le bilan d'extraction est validé ici, une seule fois. */
   private closeDoors(): void {
-    if (this.inTrainZone(this.player.x, this.player.y)) {
+    const aboard = this.trainDoorsOpen && this.inTrainZone(this.player.x, this.player.y);
+    this.train.seal();
+    this.setTrainDoors(false);
+    if (aboard) {
       this.finish(true, this.morningTrain ? 'Le premier métro part avec vous. Vous avez tenu toute la nuit.' : 'La rame part avec vous.');
     } else {
       this.finish(
@@ -898,6 +915,7 @@ export class MissionScene extends Phaser.Scene {
 
   private objective(): string {
     if (this.callEndsAt !== null) {
+      if (!this.trainDoorsOpen) return 'Attends l’ouverture des portes';
       return this.inTrainZone(this.player.x, this.player.y) ? 'Reste à bord' : 'Monte dans la rame';
     }
     if (this.noMoreTrains()) return 'Survis jusqu’au premier métro';
