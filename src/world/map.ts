@@ -1,6 +1,6 @@
 import { CONFIG } from '../config';
 
-export type Tile = 'wall' | 'street' | 'floor' | 'quay';
+export type Tile = 'wall' | 'street' | 'floor' | 'quay' | 'track';
 export type EntityKind = 'door' | 'crate' | 'terminal' | 'npc' | 'spawn' | 'infected';
 
 export interface Entity {
@@ -47,14 +47,33 @@ export interface MapData {
 /** Carte en paysage : 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur. */
 export const MAP_SIZE = { width: 96, height: 56 };
 
-/** Quai : une grande place au sud-est, avec l'entrée de métro au nord. */
-export const QUAY = { x0: 56, y0: 38, x1: 93, y1: 53 };
+/** Quai et voie d'est en ouest, au sud-est du quartier (bornes incluses). */
+export const QUAY = { x0: 56, y0: 38, x1: 94, y1: 45 };
+export const TRACK = { ...QUAY, y0: QUAY.y1 + 1, y1: 54 };
 
-/** Zone d'embarquement de la rame, en tuiles (bornes incluses), sous la borne. */
-export const TRAIN_ZONE = { x0: 62, y0: 46, x1: 73, y1: 52 };
+/** L'unique entrée côté quai et l'intérieur visible de la rame. */
+export const TRAIN_DOOR = { x0: 67, x1: 69, y: TRACK.y0 };
+export const TRAIN_ZONE = { x0: 64, y0: TRAIN_DOOR.y + 1, x1: 72, y1: 50 };
 
 /** Borne du quai. */
-export const TERMINAL_TILE = { tx: 68, ty: 43 };
+export const TERMINAL_TILE = { tx: 72, ty: 43 };
+
+function trackBlockers(): Blocker[] {
+  const r = TRACK;
+  const z = TRAIN_ZONE;
+  const d = TRAIN_DOOR;
+  const T = CONFIG.tile;
+  const rect = (x0: number, y0: number, x1: number, y1: number) => ({
+    x: x0 * T, y: y0 * T, w: (x1 - x0 + 1) * T, h: (y1 - y0 + 1) * T,
+  });
+  return [
+    rect(r.x0, r.y0, z.x0 - 1, r.y1),
+    rect(z.x1 + 1, r.y0, r.x1, r.y1),
+    rect(z.x0, d.y, d.x0 - 1, d.y),
+    rect(d.x1 + 1, d.y, z.x1, d.y),
+    rect(z.x0, z.y1 + 1, z.x1, r.y1),
+  ];
+}
 
 /**
  * Le refuge (scène à part, accessible en métro) : les gros meubles de
@@ -159,17 +178,20 @@ export function buildMap(rng: Rng = Math.random): MapData {
     });
   }
 
-  // Quai (sud-est) : la rame s'y arrête, la borne est au nord.
+  // Quai et voie réservés à la station : aucun butin ni infecté n'y apparaît au départ.
   for (let ty = QUAY.y0; ty <= QUAY.y1; ty++) {
     for (let tx = QUAY.x0; tx <= QUAY.x1; tx++) {
       tiles[ty][tx] = 'quay';
     }
   }
+  for (let ty = TRACK.y0; ty <= TRACK.y1; ty++) {
+    for (let tx = TRACK.x0; tx <= TRACK.x1; tx++) tiles[ty][tx] = 'track';
+  }
   entities.push({ kind: 'terminal', id: 'borne-quai', tx: TERMINAL_TILE.tx, ty: TERMINAL_TILE.ty });
   taken.add(key(TERMINAL_TILE.tx, TERMINAL_TILE.ty));
 
   // Départ sur le quai : on descend de la rame.
-  const spawnT = { tx: Math.round((TRAIN_ZONE.x0 + TRAIN_ZONE.x1) / 2), ty: TRAIN_ZONE.y0 + 2 };
+  const spawnT = { tx: (TRAIN_DOOR.x0 + TRAIN_DOOR.x1) / 2, ty: QUAY.y1 };
   entities.push({ kind: 'spawn', id: 'spawn', tx: spawnT.tx, ty: spawnT.ty });
   taken.add(key(spawnT.tx, spawnT.ty));
 
@@ -248,7 +270,7 @@ export function buildMap(rng: Rng = Math.random): MapData {
     if (s) addCrate(s[0], s[1]);
   }
 
-  return { width, height, tiles, entities, buildings, blockers: [] };
+  return { width, height, tiles, entities, buildings, blockers: trackBlockers() };
 }
 
 /** Meubles du refuge en px du monde, pour une illustration posée en (ox, oy) sur `displayWidth` px. */

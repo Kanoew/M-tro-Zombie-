@@ -28,7 +28,7 @@ export const IMAGES: [string, string][] = [
   ['neon_shop', 'neon_shop.png'],
   ['banner', 'banner.png'],
   ['metro', 'metro.png'],
-  ['train', 'train.png'],
+  ['train_overhead', 'train_overhead.svg'],
   ['terminal_ring', 'terminal_ring.png'],
   ['terminal_pillar', 'terminal_pillar.png'],
   ['camp', 'camp.jpg'],
