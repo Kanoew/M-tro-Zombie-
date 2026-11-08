@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CONFIG } from '../config';
 import { Controls } from '../input/Controls';
 import type { HudData, MissionEnd } from '../ui/events';
+import { RefugePanel } from '../ui/RefugePanel';
 
 const K = CONFIG.ui.scale; // l'interface est dessinée en 360x640 puis multipliée par K
 const JOY_RADIUS = 48 * K;
@@ -79,6 +80,7 @@ export class UIScene extends Phaser.Scene {
   private resultBody!: Phaser.GameObjects.Text;
   private resultVisible = false;
   private resultShownAt = 0;
+  private refuge!: RefugePanel;
 
   constructor() {
     super({ key: 'UI' });
@@ -180,6 +182,11 @@ export class UIScene extends Phaser.Scene {
     );
 
     this.buildResultLayer(width, height);
+    this.refuge = new RefugePanel(
+      this,
+      () => this.requestRestart(),
+      () => this.refuge.hide(),
+    );
 
     // Événements du jeu.
     const onPrompt = (label: string | null) => {
@@ -207,6 +214,17 @@ export class UIScene extends Phaser.Scene {
     // Raccourcis clavier depuis le bilan.
     this.input.keyboard?.on('keydown', (ev: KeyboardEvent) => {
       if (!this.resultVisible || ev.repeat) return;
+      if (this.refuge.visible) {
+        // Refuge : V vend, 1-2-3 améliorent, E ou Entrée repartent, Échap revient au bilan.
+        if (ev.code === 'KeyV') this.refuge.sellShortcut();
+        if (ev.code === 'Digit1' || ev.code === 'Numpad1') this.refuge.buyShortcut(0);
+        if (ev.code === 'Digit2' || ev.code === 'Numpad2') this.refuge.buyShortcut(1);
+        if (ev.code === 'Digit3' || ev.code === 'Numpad3') this.refuge.buyShortcut(2);
+        if (ev.code === 'KeyE' || ev.code === 'Enter') this.requestRestart();
+        if (ev.code === 'Escape') this.refuge.hide();
+        return;
+      }
+      if (ev.code === 'KeyR') this.openRefuge();
       if (ev.code === 'KeyE' || ev.code === 'Space' || ev.code === 'Enter') this.requestRestart();
       if (ev.code === 'KeyM' || ev.code === 'Escape') this.requestMenu();
     });
@@ -407,9 +425,12 @@ export class UIScene extends Phaser.Scene {
         .setOrigin(0.5);
       return [rect, text];
     };
-    const again = mkButton(height * 0.74, 'REPARTIR DU REFUGE', 0x58e6cc, () => this.requestRestart());
+    const refuge = mkButton(height * 0.74 - 46 * K, 'REFUGE', 0xffd24a, () => this.openRefuge());
+    const again = mkButton(height * 0.74, 'REPARTIR', 0x58e6cc, () => this.requestRestart());
     const menu = mkButton(height * 0.74 + 46 * K, 'MENU', 0x8fe8f5, () => this.requestMenu());
-    this.resultLayer = this.add.container(0, 0, [shade, this.resultTitle, this.resultBody, ...again, ...menu]).setVisible(false);
+    this.resultLayer = this.add
+      .container(0, 0, [shade, this.resultTitle, this.resultBody, ...refuge, ...again, ...menu])
+      .setVisible(false);
     this.resultLayer.setDepth(100);
   }
 
@@ -428,11 +449,18 @@ export class UIScene extends Phaser.Scene {
   private hideResult(): void {
     this.resultVisible = false;
     this.resultLayer.setVisible(false);
+    this.refuge?.hide();
+  }
+
+  private openRefuge(): void {
+    if (!this.resultVisible || this.time.now - this.resultShownAt < RESULT_LOCK_MS) return;
+    this.refuge.show();
   }
 
   private requestRestart(): void {
     if (!this.resultVisible || this.time.now - this.resultShownAt < RESULT_LOCK_MS) return;
     this.resultVisible = false;
+    this.refuge.hide();
     this.game.events.emit('mission-restart');
   }
 

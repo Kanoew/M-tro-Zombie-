@@ -89,6 +89,16 @@ export const CONFIG = {
     buildingLootChance: 0.4, // caisses seules ; le reste est infesté
   },
 
+  // Séance 1 : économie du refuge. Une caisse rapporte ~10 crédits en moyenne,
+  // une bonne sortie 50 à 80 : la première amélioration tombe après un retour.
+  economy: {
+    sellPrices: { materials: 3, valuables: 12, rare: 40 }, // crédits par unité
+    upgradeCosts: [40, 90, 160], // prix des niveaux 1, 2 et 3 de chaque amélioration
+    hpPerLevel: 25, // 100 -> 125 -> 150 -> 175 PV
+    staminaPerLevel: 25, // 100 -> 175 d'endurance
+    bowDamagePerLevel: 4, // 20 -> 32 : au niveau 3, une flèche suffit (infecté : 30 PV)
+  },
+
   // Butin d'une caisse.
   loot: {
     rareChance: 0.08,

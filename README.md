@@ -46,6 +46,21 @@ Horloge depuis le départ du camp (`time` dans `src/config.ts`) : le jour jusqu'
 - Quand la rame attend, le quai fait du bruit à intervalles réguliers : tous les infectés encore en vie convergent vers la borne, et de nouveaux arrivent des bords de la carte, hors de vue (voir `extraction` dans `src/config.ts`).
 - Chaque infecté affiche sa barre de vie.
 
+## Refuge et atelier (séance 1)
+
+- Le bilan propose **REFUGE**, **REPARTIR** et **MENU**. Clavier : `R` ouvre le refuge, `E` repart, `M` revient au menu.
+- Au refuge, le stock se **vend** en crédits (CR) : matériaux 3, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
+- L'**atelier** n'ouvre qu'une fois la mécanicienne ramenée. Trois améliorations, chacune sur 3 niveaux (40, 90, 160 CR) :
+  - **Vie** : +25 PV max par niveau (100 → 175)
+  - **Endurance** : +25 par niveau (100 → 175)
+  - **Arc** : +4 dégâts par flèche (20 → 32 ; au niveau 3, une flèche abat un infecté)
+- Clavier au refuge : `V` vend, `1` `2` `3` améliorent, `E` repart, `Échap` revient au bilan.
+- Le panneau est dans `src/ui/RefugePanel.ts` : il sera réutilisé par le refuge où l'on se déplace (séance 3).
+
+## Sauvegarde
+
+Les acquis (stock, crédits, améliorations, mécanicienne sauvée) sont gardés dans le navigateur (`localStorage`, clé `dernier-metro-save-v1`) après chaque retour, mort, vente ou achat. Le butin d'une sortie en cours n'est jamais sauvegardé. Pour repartir de zéro : `__dm.resetSave()` dans la console, puis recharger.
+
 ## Écran titre
 
 Choix du personnage : Joanna est jouable, le second emplacement est verrouillé. Depuis le bilan, `M` ou le bouton MENU ramène au titre.
@@ -81,7 +96,7 @@ Le numéro de version (`package.json`) et l'heure du build s'affichent en bas à
 - [x] Lot 1 : déplacement, collisions et interactions dans le quartier.
 - [x] Lot 2 : bruit, infectés, sauvetage et extraction de 60 secondes.
 - [x] Hors lot : écran titre, grande carte cachée, course et endurance, renforts de la rame, sprites et décor peints.
-- [~] Lot 3 : jour, crépuscule et nuit faits ; restent le bilan complet, l'atelier et la sauvegarde locale.
+- [~] Lot 3 : jour, crépuscule et nuit ; refuge (vente, atelier à 3 améliorations) et sauvegarde locale faits. Restent le dernier métro (8 min 30, nuit sans rame, premier métro du matin) et le refuge en scène séparée.
 - [ ] Lot 4 : campagne, nouveaux quartiers, commerce et améliorations rares.
 
 Règle de persistance : le **butin** (ramassé pendant la sortie) est perdu en cas d'échec ; les **acquis**
