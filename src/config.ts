@@ -43,10 +43,11 @@ export const CONFIG = {
   },
 
   // La nuit : des vagues d'infectés et des caisses de ravitaillement dans la rue.
+  // Essai du bloc B : pression forte, 4 à 5 caisses fouillées et retour au premier métro.
   night: {
     waveEveryStartMs: 6000, // un rôdeur toutes les 6 s au début de la nuit...
     waveEveryEndMs: 3000, // ... toutes les 3 s juste avant l'aube
-    waveMaxAlive: 14, // essai : un joueur immobile qui tire tient ~1 à 2 min ; en bougeant, la nuit se tient
+    waveMaxAlive: 14, // les renforts nocturnes sont bloqués dès ce total d'infectés en vie
     waveTargetSpread: 200, // px : ils fouillent les alentours du joueur, pas sa position exacte
     crates: 6, // caisses de nuit larguées dans la rue à la tombée de la nuit
     crateMinDistance: 90, // px du joueur
@@ -109,11 +110,12 @@ export const CONFIG = {
     buildingLootChance: 0.4, // caisses seules ; le reste est infesté
   },
 
-  // Économie du refuge. Rééquilibrée après le premier essai sur téléphone
-  // (255 CR en une sortie) : une très bonne sortie rapporte ~200 CR.
+  // Économie du refuge. Les prix ont paru cohérents pendant l'essai du bloc B,
+  // avec une première amélioration estimée après une ou deux sorties.
+  // La valeur à la revente au bilan permet de mesurer les gains par sortie.
   economy: {
     sellPrices: { materials: 1, valuables: 12, rare: 40 }, // crédits par unité (matériaux : réservés au camp plus tard)
-    upgradeCosts: [150, 350, 600], // niveaux 1, 2, 3. Essais : 200 à 400 CR par sortie -> une dizaine de sorties pour tout débloquer
+    upgradeCosts: [150, 350, 600], // niveaux 1, 2, 3
     hpPerLevel: 25, // 100 -> 125 -> 150 -> 175 PV
     staminaPerLevel: 25, // 100 -> 175 d'endurance
     bowDamagePerLevel: 4, // 20 -> 32 : au niveau 3, une flèche suffit (infecté : 30 PV)

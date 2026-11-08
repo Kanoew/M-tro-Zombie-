@@ -890,6 +890,7 @@ export class MissionScene extends Phaser.Scene {
       const mechanicAboard = !!c && c.following && this.inTrainZone(c.x, c.y);
       settleSuccess(mechanicAboard);
       lines.push(`Butin ramené : ${describeStock(gained)}.`);
+      lines.push(`Revente de la sortie : ${stockValue(gained)} CR.`);
       if (mechanicAboard) lines.push('Mécanicienne : à bord. Sauvetage validé. L\'atelier ouvre au refuge.');
       else if (c) lines.push('Mécanicienne : restée sur place. Le sauvetage reste ouvert.');
       lines.push(`Stock au refuge : ${stockValue(gameState.stock)} CR à vendre.`);
