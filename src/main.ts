@@ -4,11 +4,14 @@ import { BootScene } from './scenes/BootScene';
 import { MissionScene } from './scenes/MissionScene';
 import { TitleScene } from './scenes/TitleScene';
 import { UIScene } from './scenes/UIScene';
-import { gameState } from './state/gameState';
+import { gameState, load, resetSave } from './state/gameState';
 import { TERMINAL_TILE, TRAIN_ZONE } from './world/map';
 
 // ?renderer=canvas force le rendu 2D (utile pour les essais automatisés sans carte graphique).
 const forceCanvas = new URLSearchParams(window.location.search).get('renderer') === 'canvas';
+
+// Acquis du refuge (crédits, stock, améliorations, survivants) relus avant tout.
+load();
 
 const game = new Phaser.Game({
   type: forceCanvas ? Phaser.CANVAS : Phaser.AUTO,
@@ -29,7 +32,7 @@ const game = new Phaser.Game({
 
 // Accès de debug pour les essais dans le navigateur.
 (window as unknown as { __game: Phaser.Game; __dm: object }).__game = game;
-(window as unknown as { __dm: object }).__dm = { CONFIG, gameState, TERMINAL_TILE, TRAIN_ZONE };
+(window as unknown as { __dm: object }).__dm = { CONFIG, gameState, resetSave, TERMINAL_TILE, TRAIN_ZONE };
 
 /**
  * Cache périmé : GitHub Pages sert index.html avec un cache de plusieurs

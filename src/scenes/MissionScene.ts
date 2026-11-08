@@ -13,6 +13,9 @@ import {
   settleFailure,
   settleSuccess,
   startMission,
+  playerStats,
+  stockValue,
+  weaponDamage,
 } from '../state/gameState';
 import type { HudData, MissionEnd } from '../ui/events';
 import type { WeaponDef } from '../weapons';
@@ -87,6 +90,8 @@ export class MissionScene extends Phaser.Scene {
   private elapsed = 0;
   private lastPhase: Phase = 'day';
 
+  private maxHp = CONFIG.player.maxHp;
+  private maxStamina = CONFIG.player.stamina.max;
   private hp = CONFIG.player.maxHp;
   private stamina = CONFIG.player.stamina.max;
   private exhausted = false;
@@ -114,8 +119,12 @@ export class MissionScene extends Phaser.Scene {
     this.ended = false;
     this.elapsed = 0;
     this.lastPhase = 'day';
-    this.hp = CONFIG.player.maxHp;
-    this.stamina = CONFIG.player.stamina.max;
+    // Améliorations de l'atelier : lues une fois au départ de la sortie.
+    const stats = playerStats();
+    this.maxHp = stats.maxHp;
+    this.maxStamina = stats.maxStamina;
+    this.hp = this.maxHp;
+    this.stamina = this.maxStamina;
     this.exhausted = false;
     this.sprinting = false;
     this.lastSprintAt = -99999;
@@ -197,7 +206,7 @@ export class MissionScene extends Phaser.Scene {
         sprite: npc,
         label: 'Mécanicienne',
         active: true,
-        use: () => this.toast("La mécanicienne : « L'atelier sera prêt bientôt. »"),
+        use: () => this.toast("La mécanicienne : « Rapporte du butin. On le vend et j'améliore ton matos au retour. »"),
       });
     }
     this.physics.add.collider(this.infectedGroup, solids);
@@ -272,7 +281,7 @@ export class MissionScene extends Phaser.Scene {
         this.sprinting = false;
       }
     } else if (time - this.lastSprintAt >= st.regenDelayMs) {
-      this.stamina = Math.min(st.max, this.stamina + (st.regen * delta) / 1000);
+      this.stamina = Math.min(this.maxStamina, this.stamina + (st.regen * delta) / 1000);
     }
     let speed = CONFIG.player.speed * (this.sprinting ? CONFIG.player.sprintFactor : 1);
     if (shooting) speed *= weapon.moveFactor ?? 1;
@@ -614,7 +623,7 @@ export class MissionScene extends Phaser.Scene {
       if (Phaser.Math.Distance.Between(px, py, inf.x, inf.y) > w.range + 6) continue;
       const toward = Math.atan2(inf.y - py, inf.x - px);
       if (Math.abs(Phaser.Math.Angle.Wrap(toward - angle)) <= halfAngle) {
-        inf.takeHit(w.damage, toward, this.now);
+        inf.takeHit(weaponDamage(w), toward, this.now);
       }
     }
     this.infected = this.infected.filter((i) => !i.dead);
@@ -666,7 +675,7 @@ export class MissionScene extends Phaser.Scene {
     const arrow = this.arrows.create(this.player.x + dir.x * 10, this.player.y + dir.y * 10, 'arrow') as Phaser.Physics.Arcade.Sprite;
     arrow.setRotation(dir.angle());
     arrow.setDepth(this.player.y + 0.5);
-    arrow.setData('damage', w.damage);
+    arrow.setData('damage', weaponDamage(w));
     arrow.setVelocity(dir.x * speed, dir.y * speed);
     this.time.delayedCall((w.range / speed) * 1000, () => {
       if (arrow.active) arrow.destroy();
@@ -783,8 +792,9 @@ export class MissionScene extends Phaser.Scene {
       const mechanicAboard = !!c && c.following && this.inTrainZone(c.x, c.y);
       settleSuccess(mechanicAboard);
       lines.push(`Butin ramené : ${describeStock(gained)}.`);
-      if (mechanicAboard) lines.push('Mécanicienne : à bord. Sauvetage validé.');
+      if (mechanicAboard) lines.push('Mécanicienne : à bord. Sauvetage validé. L\'atelier ouvre au refuge.');
       else if (c) lines.push('Mécanicienne : restée sur place. Le sauvetage reste ouvert.');
+      lines.push(`Stock au refuge : ${stockValue(gameState.stock)} CR à vendre.`);
     } else {
       const lost = { ...gameState.butin };
       settleFailure();
@@ -792,6 +802,8 @@ export class MissionScene extends Phaser.Scene {
       lines.push(`Acquis conservés : ${currentWeapon().name}, stock ${describeStock(gameState.stock)}.`);
       if (c) lines.push('Mécanicienne : toujours à sauver.');
     }
+    // Dernier état du HUD avant le bilan (sinon il garde les PV d'avant le coup fatal).
+    this.game.events.emit('hud', this.hudData(this.now));
     const payload: MissionEnd = {
       success,
       title: success ? 'RETOUR RÉUSSI' : 'ÉCHEC',
@@ -809,9 +821,9 @@ export class MissionScene extends Phaser.Scene {
     else if (this.companion) escort = this.companion.following ? 'following' : 'waiting';
     return {
       hp: this.hp,
-      maxHp: CONFIG.player.maxHp,
+      maxHp: this.maxHp,
       stamina: this.stamina,
-      maxStamina: CONFIG.player.stamina.max,
+      maxStamina: this.maxStamina,
       exhausted: this.exhausted,
       weapon: currentWeapon().name,
       phase: this.phase(),
