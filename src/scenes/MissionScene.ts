@@ -100,6 +100,8 @@ export class MissionScene extends Phaser.Scene {
 
   private ended = false;
   private callEndsAt: number | null = null;
+  /** Vrai quand la rame qui attend est le premier métro du matin (bonus de survie). */
+  private morningTrain = false;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
   private train!: Phaser.GameObjects.Image;
@@ -129,6 +131,7 @@ export class MissionScene extends Phaser.Scene {
     this.sprinting = false;
     this.lastSprintAt = -99999;
     this.callEndsAt = null;
+    this.morningTrain = false;
     this.interactables = [];
     this.infected = [];
     this.companion = null;
@@ -183,7 +186,7 @@ export class MissionScene extends Phaser.Scene {
           this.addCrate(solids, e, x, y);
           break;
         case 'terminal':
-          this.addStatic(solids, e, x, y, 'terminal', () => (this.callEndsAt === null ? 'Appeler la rame' : 'Rame en approche'), () => this.callTrain(), true);
+          this.addStatic(solids, e, x, y, 'terminal', () => this.terminalLabel(), () => this.callTrain(), true);
           // La borne est dessinée par le socle et le pilier peints (voir buildGround).
           this.interactables[this.interactables.length - 1].sprite.setVisible(false);
           break;
@@ -258,11 +261,14 @@ export class MissionScene extends Phaser.Scene {
     if (phase !== this.lastPhase) {
       this.lastPhase = phase;
       this.game.events.emit('phase-change', { phase, elapsed: this.elapsed });
-      this.toast(
-        phase === 'dusk'
-          ? 'Talkie : « Le jour baisse. Il est temps de rentrer. »'
-          : 'Talkie : « La nuit est là. Ils entendent tout. »',
-      );
+      const talk: Record<Phase, string> = {
+        day: '',
+        dusk: 'Talkie : « Le jour baisse. Dernier appel de la rame à 7:30. »',
+        night: 'Talkie : « Plus aucune rame. Tiens jusqu\'au premier métro, à l\'aube. »',
+        dawn: 'Talkie : « Le premier métro arrive ! Monte, vite. »',
+      };
+      this.toast(talk[phase]);
+      if (phase === 'dawn' && this.callEndsAt === null) this.callTrain(true);
     }
 
     // Déplacement, course et endurance.
@@ -315,6 +321,7 @@ export class MissionScene extends Phaser.Scene {
   /** Jour, crépuscule (le talkie prévient, la lumière change), nuit (ils entendent plus loin). */
   private phase(): Phase {
     const t = CONFIG.time;
+    if (this.elapsed >= t.dawnAt) return 'dawn';
     if (this.elapsed >= t.nightAt) return 'night';
     return this.elapsed >= t.duskAt ? 'dusk' : 'day';
   }
@@ -698,18 +705,39 @@ export class MissionScene extends Phaser.Scene {
     return { x: TERMINAL_TILE.tx * T + T / 2, y: TERMINAL_TILE.ty * T + T / 2 };
   }
 
-  private callTrain(): void {
+  /** Vrai entre le dernier appel (7:30) et l'aube : la borne ne fait plus venir de rame. */
+  private noMoreTrains(): boolean {
+    const t = CONFIG.time;
+    return this.elapsed >= t.lastCallAt && this.elapsed < t.dawnAt;
+  }
+
+  private terminalLabel(): string {
+    if (this.callEndsAt !== null) return this.morningTrain ? 'Premier métro à quai' : 'Rame en approche';
+    return this.noMoreTrains() ? 'Plus de rame avant l\'aube' : 'Appeler la rame';
+  }
+
+  /** `morning` : le premier métro du matin, qui arrive seul à l'aube. */
+  private callTrain(morning = false): void {
     if (this.callEndsAt !== null) {
       this.toast(`La rame est là. Fermeture des portes dans ${this.secondsLeft()} s.`);
       return;
     }
+    if (!morning && this.noMoreTrains()) {
+      this.toast('La borne ne répond plus. Le prochain métro passera à l\'aube.');
+      return;
+    }
+    this.morningTrain = morning;
     const X = CONFIG.extraction;
     this.callEndsAt = this.now + X.closingSeconds * 1000;
     this.nextWaitNoiseAt = this.now + X.waitNoiseEveryMs;
     this.nextReinforceAt = this.now + 2500;
     const t = this.terminalPos();
     this.emitNoise(t.x, t.y, CONFIG.noise.quayAnnouncement, 'annonce-quai', CONFIG.noise.quayVisual);
-    this.toast(`Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`);
+    this.toast(
+      morning
+        ? `Premier métro du matin. Fermeture des portes dans ${X.closingSeconds} s.`
+        : `Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`,
+    );
 
     // La rame glisse jusqu'au quai.
     this.train.setX(this.trainBaseX + 230);
@@ -771,9 +799,14 @@ export class MissionScene extends Phaser.Scene {
   /** Fermeture des portes : le bilan d'extraction est validé ici, une seule fois. */
   private closeDoors(): void {
     if (this.inTrainZone(this.player.x, this.player.y)) {
-      this.finish(true, 'La rame part avec vous.');
+      this.finish(true, this.morningTrain ? 'Le premier métro part avec vous. Vous avez tenu toute la nuit.' : 'La rame part avec vous.');
     } else {
-      this.finish(false, 'Rame ratée : les portes se sont fermées sans vous.');
+      this.finish(
+        false,
+        this.morningTrain
+          ? 'Le premier métro est reparti sans vous. Personne ne viendra.'
+          : 'Rame ratée : les portes se sont fermées sans vous.',
+      );
     }
   }
 
@@ -788,6 +821,13 @@ export class MissionScene extends Phaser.Scene {
     const lines: string[] = [];
     const c = this.companion;
     if (success) {
+      // Nuit survécue : le butin du premier métro est multiplié.
+      if (this.morningTrain) {
+        const k = CONFIG.morning.lootBonus;
+        const b = gameState.butin;
+        gameState.butin = { materials: Math.round(b.materials * k), valuables: Math.round(b.valuables * k), rare: Math.round(b.rare * k) };
+        lines.push(`Nuit survécue : butin x${String(k).replace('.', ',')}.`);
+      }
       const gained = { ...gameState.butin };
       const mechanicAboard = !!c && c.following && this.inTrainZone(c.x, c.y);
       settleSuccess(mechanicAboard);
