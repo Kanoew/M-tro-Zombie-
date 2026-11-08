@@ -4,6 +4,7 @@ import { Companion } from '../entities/Companion';
 import { Infected, type InfectedContext, type Phase } from '../entities/Infected';
 import { Controls } from '../input/Controls';
 import { Animator, NEON_KEYS, setupCharacter } from '../render/characters';
+import { showNoisePulse } from '../render/noisePulse';
 import { createTextures } from '../render/textures';
 import {
   currentWeapon,
@@ -590,24 +591,13 @@ export class MissionScene extends Phaser.Scene {
   // --- Bruit, combat -------------------------------------------------------
 
   /** `radius` : portée d'écoute ; `visualRadius` : taille de l'onde affichée. */
-  private emitNoise(x: number, y: number, radius: number, source: string, visualRadius = radius): void {
+  private emitNoise(x: number, y: number, radius: number, source: string, visualRadius?: number): void {
     for (const inf of this.infected) inf.hear(x, y, radius);
     const event: NoiseEvent = { x, y, radius, source };
     this.game.events.emit('noise', event);
 
-    // Repère visuel du rayon (utile pour régler le bruit aux essais).
-    const ring = this.add.circle(x, y, 4).setStrokeStyle(0.8, 0xff4f8b, 0.9).setDepth(3200);
-    const grow = { r: 4 };
-    this.tweens.add({
-      targets: grow,
-      r: visualRadius,
-      duration: 700,
-      onUpdate: () => {
-        ring.setRadius(grow.r);
-        ring.setAlpha(1 - grow.r / visualRadius);
-      },
-      onComplete: () => ring.destroy(),
-    });
+    const hearingFactor = this.phase() === 'night' ? CONFIG.infected.noiseHearingFactorNight : 1;
+    showNoisePulse(this, x, y, visualRadius ?? radius * hearingFactor, visualRadius !== undefined);
   }
 
   /** Attaque avec l'arme équipée : coup à l'arc de cercle ou tir, selon `kind`. */
