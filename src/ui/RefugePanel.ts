@@ -33,8 +33,7 @@ interface UpgradeRow {
  * repartir. Il n'a pas de règles à lui : il appelle les fonctions de
  * `gameState` et se redessine.
  *
- * Séance 1 : ouvert depuis le bilan. Séance 3 : le même panneau sera ouvert
- * par la mécanicienne et le comptoir du refuge où l'on se déplace.
+ * Ouvert par le comptoir et la mécanicienne du refuge (`RefugeUIScene`).
  */
 export class RefugePanel {
   readonly layer: Phaser.GameObjects.Container;
@@ -50,6 +49,7 @@ export class RefugePanel {
     private scene: Phaser.Scene,
     private onDepart: () => void,
     private onBack: () => void,
+    backLabel = 'FERMER',
   ) {
     const { width, height } = scene.scale;
     const items: Phaser.GameObjects.GameObject[] = [];
@@ -114,7 +114,7 @@ export class RefugePanel {
     const depart = this.makeButton(width / 2, height - 108 * K, 200 * K, 36 * K, 0x58e6cc, () => this.onDepart(), items);
     depart.text.setText('REPARTIR');
     const back = this.makeButton(width / 2, height - 62 * K, 200 * K, 32 * K, 0x8fe8f5, () => this.onBack(), items);
-    back.text.setText('RETOUR AU BILAN');
+    back.text.setText(backLabel);
 
     this.layer = scene.add.container(0, 0, items).setDepth(110).setVisible(false);
   }

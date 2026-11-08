@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { CONFIG } from './config';
 import { BootScene } from './scenes/BootScene';
 import { MissionScene } from './scenes/MissionScene';
+import { RefugeScene } from './scenes/RefugeScene';
+import { RefugeUIScene } from './scenes/RefugeUIScene';
 import { TitleScene } from './scenes/TitleScene';
 import { UIScene } from './scenes/UIScene';
 import { gameState, load, resetSave } from './state/gameState';
@@ -27,7 +29,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, TitleScene, MissionScene, UIScene],
+  scene: [BootScene, TitleScene, RefugeScene, RefugeUIScene, MissionScene, UIScene],
 });
 
 // Accès de debug pour les essais dans le navigateur.

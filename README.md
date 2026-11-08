@@ -50,22 +50,26 @@ Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la bar
 ## Carte et décor
 
 - Carte en paysage de 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur.
-- Le **camp** (refuge) est l'illustration fournie, posée sur le bâtiment de départ ; ses gros meubles sont des zones de collision (`CAMP` dans `src/world/map.ts`).
+- Le refuge n'est plus dans la rue : l'ancien emplacement du camp est un grand **hangar** à fouiller. Les meubles du refuge sont des zones de collision (`campBlockers` dans `src/world/map.ts`).
 - Au **quai**, la rame et la borne rouge sont détourées des illustrations ; la rame glisse jusqu'au quai quand on l'appelle.
 - Chaque bâtiment fermé est recouvert d'un toit : on ne voit pas ce qu'il contient. Ouvrir ou forcer la porte lève le toit. Le contenu (pièce vide, caisses, infectés) est tiré à chaque sortie ; l'atelier abrite toujours la mécanicienne.
 - Quand la rame attend, le quai fait du bruit à intervalles réguliers : tous les infectés encore en vie convergent vers la borne, et de nouveaux arrivent des bords de la carte, hors de vue (voir `extraction` dans `src/config.ts`).
 - Chaque infecté affiche sa barre de vie.
 
-## Refuge et atelier (séance 1)
+## Le refuge
 
-- Le bilan propose **REFUGE**, **REPARTIR** et **MENU**. Clavier : `R` ouvre le refuge, `E` repart, `M` revient au menu.
-- Au refuge, le stock se **vend** en crédits (CR) : matériaux 1, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
-- L'**atelier** n'ouvre qu'une fois la mécanicienne ramenée. Trois améliorations, chacune sur 3 niveaux (80, 180, 320 CR : une dizaine de bonnes sorties pour tout débloquer) :
+Le refuge est une scène à part (`src/scenes/RefugeScene.ts`), accessible seulement en métro. On y arrive depuis l'écran titre et depuis le bilan (bouton **REFUGE**). On s'y déplace comme dans la rue, sans infectés :
+
+- **Comptoir** (poste informatique bleu) : vend le stock en crédits (CR). Matériaux 1, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
+- **Mécanicienne** (devant l'établi) : l'atelier. Elle n'est là qu'une fois ramenée de l'atelier, en ville. Trois améliorations sur 3 niveaux (150, 350, 600 CR) :
   - **Vie** : +25 PV max par niveau (100 → 175)
   - **Endurance** : +25 par niveau (100 → 175)
   - **Arc** : +4 dégâts par flèche (20 → 32 ; au niveau 3, une flèche abat un infecté)
-- Clavier au refuge : `V` vend, `1` `2` `3` améliorent, `E` repart, `Échap` revient au bilan.
-- Le panneau est dans `src/ui/RefugePanel.ts` : il sera réutilisé par le refuge où l'on se déplace (séance 3).
+- **Portail** : prendre la rame. La sortie commence sur le quai, à la descente de la rame, qui repart aussitôt.
+
+Les repères au sol (cercles verts) marquent les trois points. Panneau ouvert, au clavier : `V` vend, `1` `2` `3` améliorent, `Échap` ferme. Le panneau est dans `src/ui/RefugePanel.ts`, l'interface du refuge dans `src/scenes/RefugeUIScene.ts`.
+
+Depuis le bilan, **REPARTIR** relance directement une sortie sans passer par le refuge.
 
 ## Sauvegarde
 
@@ -106,7 +110,7 @@ Le numéro de version (`package.json`) et l'heure du build s'affichent en bas à
 - [x] Lot 1 : déplacement, collisions et interactions dans le quartier.
 - [x] Lot 2 : bruit, infectés, sauvetage et extraction de 60 secondes.
 - [x] Hors lot : écran titre, grande carte cachée, course et endurance, renforts de la rame, sprites et décor peints.
-- [~] Lot 3 : jour, crépuscule et nuit ; refuge (vente, atelier à 3 améliorations) et sauvegarde locale faits. Dernier métro, nuit sans rame et premier métro du matin faits. Reste le refuge en scène séparée.
+- [~] Lot 3 : jour, crépuscule et nuit ; refuge (vente, atelier à 3 améliorations) et sauvegarde locale faits. Dernier métro, nuit sans rame, premier métro du matin et refuge en scène séparée faits.
 - [ ] Lot 4 : campagne, nouveaux quartiers, commerce et améliorations rares.
 
 Règle de persistance : le **butin** (ramassé pendant la sortie) est perdu en cas d'échec ; les **acquis**

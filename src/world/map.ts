@@ -57,11 +57,11 @@ export const TRAIN_ZONE = { x0: 62, y0: 46, x1: 73, y1: 52 };
 export const TERMINAL_TILE = { tx: 68, ty: 43 };
 
 /**
- * Le camp (refuge) : l'illustration est posée sur le bâtiment `refuge` et les gros
- * meubles sont des zones de collision, décrites ici en pixels de l'image d'origine
- * (2000 x 1116). L'illustration est étalée sur 20 tuiles de large.
+ * Le refuge (scène à part, accessible en métro) : les gros meubles de
+ * l'illustration sont des zones de collision, décrites ici en pixels de l'image
+ * d'origine (2000 x 1116).
  */
-export const CAMP = { tx: 2, ty: 41, tilesWide: 20, imageWidth: 2000 };
+export const CAMP_IMAGE_WIDTH = 2000;
 const CAMP_BLOCKS: [number, number, number, number][] = [
   [95, 150, 700, 570], // rayonnages, caisses et bidons du nord-ouest
   [0, 520, 340, 800], // plateforme et escalier ouest
@@ -101,8 +101,9 @@ const BUILDINGS: Omit<Building, 'open'>[] = [
   { id: 'atelier', x: 41, y: 20, w: 14, h: 12, door: [47, 31], forced: true },
   { id: 'hotel', x: 60, y: 20, w: 12, h: 12, door: [65, 31], forced: false },
   { id: 'serveurs', x: 76, y: 20, w: 18, h: 12, door: [84, 31], forced: true },
-  // Rangée sud : le camp (portail ouvert au sud), puis deux bâtiments (portes au nord).
-  { id: 'refuge', x: 2, y: 41, w: 20, h: 10, door: [12, 50], forced: false },
+  // Rangée sud : un grand hangar (porte au sud), puis deux bâtiments (portes au nord).
+  // Le refuge n'est plus dans la rue : on y va en métro (RefugeScene).
+  { id: 'hangar', x: 2, y: 41, w: 20, h: 10, door: [12, 50], forced: true },
   { id: 'depot', x: 26, y: 41, w: 13, h: 10, door: [32, 41], forced: true },
   { id: 'commissariat', x: 41, y: 41, w: 13, h: 10, door: [47, 41], forced: true },
 ];
@@ -167,9 +168,10 @@ export function buildMap(rng: Rng = Math.random): MapData {
   entities.push({ kind: 'terminal', id: 'borne-quai', tx: TERMINAL_TILE.tx, ty: TERMINAL_TILE.ty });
   taken.add(key(TERMINAL_TILE.tx, TERMINAL_TILE.ty));
 
-  // Départ dans le camp, devant le portail.
-  entities.push({ kind: 'spawn', id: 'spawn', tx: 12, ty: 49 });
-  taken.add(key(12, 49));
+  // Départ sur le quai : on descend de la rame.
+  const spawnT = { tx: Math.round((TRAIN_ZONE.x0 + TRAIN_ZONE.x1) / 2), ty: TRAIN_ZONE.y0 + 2 };
+  entities.push({ kind: 'spawn', id: 'spawn', tx: spawnT.tx, ty: spawnT.ty });
+  taken.add(key(spawnT.tx, spawnT.ty));
 
   const pick = (min: number, max: number) => min + Math.floor(rng() * (max - min + 1));
 
@@ -246,15 +248,16 @@ export function buildMap(rng: Rng = Math.random): MapData {
     if (s) addCrate(s[0], s[1]);
   }
 
-  const k = (CAMP.tilesWide * CONFIG.tile) / CAMP.imageWidth;
-  const ox = CAMP.tx * CONFIG.tile;
-  const oy = CAMP.ty * CONFIG.tile;
-  const blockers: Blocker[] = CAMP_BLOCKS.map(([x0, y0, x1, y1]) => ({
+  return { width, height, tiles, entities, buildings, blockers: [] };
+}
+
+/** Meubles du refuge en px du monde, pour une illustration posée en (ox, oy) sur `displayWidth` px. */
+export function campBlockers(ox: number, oy: number, displayWidth: number): Blocker[] {
+  const k = displayWidth / CAMP_IMAGE_WIDTH;
+  return CAMP_BLOCKS.map(([x0, y0, x1, y1]) => ({
     x: ox + x0 * k,
     y: oy + y0 * k,
     w: (x1 - x0) * k,
     h: (y1 - y0) * k,
   }));
-
-  return { width, height, tiles, entities, buildings, blockers };
 }

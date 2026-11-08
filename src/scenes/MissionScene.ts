@@ -21,7 +21,6 @@ import type { HudData, MissionEnd } from '../ui/events';
 import type { WeaponDef } from '../weapons';
 import {
   buildMap,
-  CAMP,
   QUAY,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
@@ -206,19 +205,6 @@ export class MissionScene extends Phaser.Scene {
         default:
       }
     }
-    if (gameState.rescued.mecanicienne) {
-      const e: Entity = { kind: 'npc', id: 'mecanicienne-refuge', tx: 15, ty: 48 };
-      const mx = e.tx * T + T / 2;
-      const my = e.ty * T + T / 2;
-      const npc = this.add.sprite(mx, my, 'mecano_walk', 0).setScale(CONFIG.sprites.scale).setOrigin(0.5, CONFIG.sprites.originY).setDepth(my);
-      this.interactables.push({
-        entity: e,
-        sprite: npc,
-        label: 'Mécanicienne',
-        active: true,
-        use: () => this.toast("La mécanicienne : « Rapporte du butin. On le vend et j'améliore ton matos au retour. »"),
-      });
-    }
     this.physics.add.collider(this.infectedGroup, solids);
     this.physics.add.collider(this.infectedGroup, this.infectedGroup);
 
@@ -254,6 +240,13 @@ export class MissionScene extends Phaser.Scene {
     if (!this.scene.isActive('UI')) this.scene.launch('UI');
     this.game.events.emit('mission-start');
     this.game.events.emit('prompt', null);
+
+    // On descend de la rame : elle repart vers l'est.
+    this.train.setAlpha(1);
+    this.tweens.add({ targets: this.train, x: this.trainBaseX + 230, alpha: 0, delay: 900, duration: 1800, ease: 'Cubic.easeIn' });
+    this.time.delayedCall(600, () =>
+      this.toast(`La rame repart. Reviens appeler la borne avant ${clock(CONFIG.time.lastCallAt)}.`),
+    );
   }
 
   update(time: number, delta: number): void {
@@ -365,14 +358,7 @@ export class MissionScene extends Phaser.Scene {
       }
     }
 
-    // Le camp : l'illustration couvre le bâtiment ; ses gros meubles bloquent le passage.
-    const campW = CAMP.tilesWide * T;
-    const campSrc = this.textures.get('camp').getSourceImage();
-    this.add
-      .image(CAMP.tx * T, CAMP.ty * T, 'camp')
-      .setOrigin(0)
-      .setDisplaySize(campW, (campW * campSrc.height) / campSrc.width)
-      .setDepth(-9);
+    // Obstacles décrits en px (aucun dans la rue depuis que le refuge est une scène à part).
     for (const b of map.blockers) {
       const blk = solids.create(b.x + b.w / 2, b.y + b.h / 2, 'wall');
       blk.setVisible(false).setDisplaySize(b.w, b.h).refreshBody();
