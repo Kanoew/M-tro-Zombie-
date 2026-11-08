@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { CONFIG } from '../config';
-import { Animator, setupCharacter } from '../render/characters';
+import { Animator, INFECTED_SHEET, setupCharacter } from '../render/characters';
 import type { Nav } from '../world/nav';
 import { HpBar } from './HpBar';
 import { PathMover } from './PathMover';
@@ -46,10 +46,10 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
   private attackUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, private readonly ctx: InfectedContext) {
-    super(scene, x, y, 'zombie', 0);
+    super(scene, x, y, INFECTED_SHEET, 0);
     scene.add.existing(this);
     scene.physics.add.existing(this);
-    setupCharacter(this);
+    setupCharacter(this, CONFIG.sprites.scale * 1.15);
     this.animator = new Animator(this, 'zombie');
     this.bar = new HpBar(scene);
     this.home = new Phaser.Math.Vector2(x, y);
