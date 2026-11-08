@@ -36,34 +36,6 @@ export function createTextures(scene: Phaser.Scene): void {
     g.fillStyle(0x2c3f46).fillRect(0, 0, T, 1).fillRect(0, 0, 1, T);
     g.fillStyle(0x1b272c).fillRect(T - 1, 0, 1, T).fillRect(0, T - 1, T, 1);
   });
-  // Bande de danger du bord de quai.
-  make(
-    'hazard',
-    (g) => {
-      g.fillStyle(0x15171c).fillRect(0, 0, T, 6);
-      g.fillStyle(0xe0b73a);
-      g.fillPoints(
-        [
-          { x: 0, y: 6 },
-          { x: 4, y: 0 },
-          { x: 8, y: 0 },
-          { x: 4, y: 6 },
-        ],
-        true,
-      );
-      g.fillPoints(
-        [
-          { x: 8, y: 6 },
-          { x: 12, y: 0 },
-          { x: 16, y: 0 },
-          { x: 12, y: 6 },
-        ],
-        true,
-      );
-    },
-    T,
-    6,
-  );
   make('wall', (g) => {
     g.fillStyle(0x0a0e16).fillRect(0, 0, T, T);
     g.fillStyle(0x1f7a86).fillRect(0, 0, T, 2);

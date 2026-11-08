@@ -15,6 +15,7 @@ npm run build    # vérification TypeScript + build dans dist/
 
 - Clavier : ZQSD, WASD ou flèches pour bouger, **Maj** pour courir, E ou Espace pour interagir, F ou J pour attaquer, **Tab** pour changer d'arme.
 - Tactile : joystick flottant sur la moitié gauche de l'écran, boutons ACT, ATQ et COURIR (maintenu) à droite.
+- En sortie, le bouton pause en haut à droite ou **Échap** suspend la partie et ses comptes à rebours.
 - Courir consomme l'endurance (barre jaune). À zéro, on est épuisé : la course reste bloquée jusqu'à récupération. Courir se remarque de plus loin.
 
 ## Règles du lot 2
@@ -51,7 +52,7 @@ Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la bar
 
 - Carte en paysage de 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur.
 - Le refuge n'est plus dans la rue : l'ancien emplacement du camp est un grand **hangar** à fouiller. Les meubles du refuge sont des zones de collision (`campBlockers` dans `src/world/map.ts`).
-- Au **quai**, la rame et la borne rouge sont détourées des illustrations ; la rame glisse jusqu'au quai quand on l'appelle.
+- Au **quai**, la rame arrive par la droite sur les rails. À l'arrêt, ses portes s'ouvrent sur un passage éclairé. Franchis le seuil depuis le quai pour entrer dans la cabine visible du dessus.
 - Chaque bâtiment fermé est recouvert d'un toit : on ne voit pas ce qu'il contient. Ouvrir ou forcer la porte lève le toit. Le contenu (pièce vide, caisses, infectés) est tiré à chaque sortie ; l'atelier abrite toujours la mécanicienne.
 - Quand la rame attend, le quai fait du bruit à intervalles réguliers : tous les infectés encore en vie convergent vers la borne, et de nouveaux arrivent des bords de la carte, hors de vue (voir `extraction` dans `src/config.ts`).
 - Chaque infecté affiche sa barre de vie.

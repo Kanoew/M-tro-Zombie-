@@ -4,6 +4,8 @@ import { Companion } from '../entities/Companion';
 import { Infected, type InfectedContext, type Phase } from '../entities/Infected';
 import { Controls } from '../input/Controls';
 import { Animator, NEON_KEYS, setupCharacter } from '../render/characters';
+import { drawMetroTracks, MetroView } from '../render/metro';
+import { showNoisePulse } from '../render/noisePulse';
 import { createTextures } from '../render/textures';
 import {
   currentWeapon,
@@ -24,6 +26,7 @@ import {
   QUAY,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
+  TRAIN_DOOR,
   TRAIN_ZONE,
   type Entity,
   type MapData,
@@ -108,8 +111,9 @@ export class MissionScene extends Phaser.Scene {
   private nextWaveAt = 0;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
-  private train!: Phaser.GameObjects.Image;
-  private trainBaseX = 0;
+  private train!: MetroView;
+  private trainGate!: Phaser.Physics.Arcade.StaticBody;
+  private trainDoorsOpen = false;
   private fog!: Phaser.GameObjects.TileSprite;
   private quayLights: Phaser.GameObjects.Arc[] = [];
 
@@ -123,6 +127,7 @@ export class MissionScene extends Phaser.Scene {
     startMission();
 
     this.ended = false;
+    this.now = 0;
     this.elapsed = 0;
     this.lastPhase = 'day';
     // Améliorations de l'atelier : lues une fois au départ de la sortie.
@@ -158,6 +163,11 @@ export class MissionScene extends Phaser.Scene {
     const solids = this.physics.add.staticGroup();
     this.solids = solids;
     this.buildGround(map, solids, worldW, worldH);
+    const d = TRAIN_DOOR;
+    const gate = solids.create(((d.x0 + d.x1 + 1) / 2) * T, (d.y + 0.5) * T, 'wall');
+    gate.setDisplaySize((d.x1 - d.x0 + 1) * T, T).setVisible(false).refreshBody();
+    this.trainGate = gate.body as Phaser.Physics.Arcade.StaticBody;
+    this.setTrainDoors(false);
 
     // Joueur.
     const spawnEnt = map.entities.find((e) => e.kind === 'spawn');
@@ -242,15 +252,16 @@ export class MissionScene extends Phaser.Scene {
     this.game.events.emit('prompt', null);
 
     // On descend de la rame : elle repart vers l'est.
-    this.train.setAlpha(1);
-    this.tweens.add({ targets: this.train, x: this.trainBaseX + 230, alpha: 0, delay: 900, duration: 1800, ease: 'Cubic.easeIn' });
+    this.train.depart();
     this.time.delayedCall(600, () =>
       this.toast(`La rame repart. Reviens appeler la borne avant ${clock(CONFIG.time.lastCallAt)}.`),
     );
   }
 
-  update(time: number, delta: number): void {
-    this.now = time;
+  update(_frameTime: number, delta: number): void {
+    // Le temps de mission n’avance pas quand la scène est en pause.
+    this.now += delta;
+    const time = this.now;
     this.fog.tilePositionX += delta * 0.006;
     this.fog.tilePositionY += delta * 0.002;
     if (this.ended) return;
@@ -310,13 +321,20 @@ export class MissionScene extends Phaser.Scene {
     if (this.controls.consumeAttack()) this.attack(time);
 
     for (const inf of this.infected) inf.think(time, delta);
-    this.companion?.think(time);
+    const c = this.companion;
+    if (c) {
+      // A l'entrée, la distance de suivi habituelle peut laisser la mécanicienne sur le quai.
+      const target = this.trainDoorsOpen && this.inTrainZone(this.player.x, this.player.y) && !this.inTrainZone(c.x, c.y)
+        ? { x: this.player.x, y: Math.max(this.player.y, (TRAIN_ZONE.y0 + 0.5) * CONFIG.tile) }
+        : undefined;
+      c.think(time, target);
+    }
     this.updateExtraction(time);
     this.updateNightWaves(time);
 
     if (time >= this.nextHudAt) {
       this.nextHudAt = time + 100;
-      this.game.events.emit('hud', this.hudData(time));
+      this.game.events.emit('hud', this.hudData());
     }
   }
 
@@ -358,7 +376,7 @@ export class MissionScene extends Phaser.Scene {
       }
     }
 
-    // Obstacles décrits en px (aucun dans la rue depuis que le refuge est une scène à part).
+    // Obstacles de la voie, alignés sur la grille de navigation.
     for (const b of map.blockers) {
       const blk = solids.create(b.x + b.w / 2, b.y + b.h / 2, 'wall');
       blk.setVisible(false).setDisplaySize(b.w, b.h).refreshBody();
@@ -407,7 +425,8 @@ export class MissionScene extends Phaser.Scene {
     // Quai : entrée de métro au nord, borne au centre (socle posé au sol, pilier par-dessus).
     const tx = TERMINAL_TILE.tx * T + T / 2;
     const ty = TERMINAL_TILE.ty * T + T / 2;
-    this.add.image(tx, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
+    const entryX = ((TRAIN_DOOR.x0 + TRAIN_DOOR.x1 + 1) / 2) * T;
+    this.add.image(entryX, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
     this.add.image(tx, ty, 'terminal_ring').setScale(0.2).setDepth(-8);
     this.add.image(tx, ty + 2, 'terminal_pillar').setOrigin(0.497, 0.868).setScale(0.2).setDepth(ty + 2);
 
@@ -422,21 +441,8 @@ export class MissionScene extends Phaser.Scene {
       this.quayLights.push(light);
     }
 
-    // Rame (détourée de l'illustration) : elle arrive du bord droit quand on l'appelle.
-    const z = TRAIN_ZONE;
-    this.add
-      .tileSprite(z.x0 * T, z.y0 * T - 8, (z.x1 - z.x0 + 1) * T, 6, 'hazard')
-      .setOrigin(0)
-      .setDepth(-9);
-    const zx = ((z.x0 + z.x1 + 1) / 2) * T;
-    const zBottom = (z.y1 + 1) * T - 4;
-    this.trainBaseX = zx;
-    this.train = this.add
-      .image(zx, zBottom, 'train')
-      .setOrigin(0.5, 1)
-      .setScale(0.3)
-      .setAlpha(0)
-      .setDepth(z.y0 * T);
+    drawMetroTracks(this);
+    this.train = new MetroView(this);
   }
 
   /** Lève le toit d'un bâtiment : son contenu apparaît. */
@@ -587,24 +593,13 @@ export class MissionScene extends Phaser.Scene {
   // --- Bruit, combat -------------------------------------------------------
 
   /** `radius` : portée d'écoute ; `visualRadius` : taille de l'onde affichée. */
-  private emitNoise(x: number, y: number, radius: number, source: string, visualRadius = radius): void {
+  private emitNoise(x: number, y: number, radius: number, source: string, visualRadius?: number): void {
     for (const inf of this.infected) inf.hear(x, y, radius);
     const event: NoiseEvent = { x, y, radius, source };
     this.game.events.emit('noise', event);
 
-    // Repère visuel du rayon (utile pour régler le bruit aux essais).
-    const ring = this.add.circle(x, y, 4).setStrokeStyle(0.8, 0xff4f8b, 0.9).setDepth(3200);
-    const grow = { r: 4 };
-    this.tweens.add({
-      targets: grow,
-      r: visualRadius,
-      duration: 700,
-      onUpdate: () => {
-        ring.setRadius(grow.r);
-        ring.setAlpha(1 - grow.r / visualRadius);
-      },
-      onComplete: () => ring.destroy(),
-    });
+    const hearingFactor = this.phase() === 'night' ? CONFIG.infected.noiseHearingFactorNight : 1;
+    showNoisePulse(this, x, y, visualRadius ?? radius * hearingFactor, visualRadius !== undefined);
   }
 
   /** Attaque avec l'arme équipée : coup à l'arc de cercle ou tir, selon `kind`. */
@@ -717,7 +712,10 @@ export class MissionScene extends Phaser.Scene {
   }
 
   private terminalLabel(): string {
-    if (this.callEndsAt !== null) return this.morningTrain ? 'Premier métro à quai' : 'Rame en approche';
+    if (this.callEndsAt !== null) {
+      if (!this.trainDoorsOpen) return 'Rame en approche';
+      return this.morningTrain ? 'Premier métro à quai' : 'Rame à quai';
+    }
     return this.noMoreTrains() ? 'Plus de rame avant l\'aube' : 'Appeler la rame';
   }
 
@@ -744,10 +742,9 @@ export class MissionScene extends Phaser.Scene {
         : `Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`,
     );
 
-    // La rame glisse jusqu'au quai.
-    this.train.setX(this.trainBaseX + 230);
-    this.tweens.add({ targets: this.train, alpha: 1, duration: 900 });
-    this.tweens.add({ targets: this.train, x: this.trainBaseX, duration: 1600, ease: 'Cubic.easeOut' });
+    this.train.arrive(() => {
+      if (!this.ended) this.setTrainDoors(true);
+    });
     for (const light of this.quayLights) light.setAlpha(0.4);
   }
 
@@ -775,7 +772,7 @@ export class MissionScene extends Phaser.Scene {
     // Les portes clignotent sur les 10 dernières secondes.
     if (left < 10000) {
       const blink = Math.floor(left / 300) % 2 === 0;
-      this.train.setTint(blink ? 0xff8d8d : 0xffffff);
+      this.train.warn(blink);
     }
     if (left <= 0) this.closeDoors();
   }
@@ -838,6 +835,16 @@ export class MissionScene extends Phaser.Scene {
     }
   }
 
+  private setTrainDoors(open: boolean): void {
+    this.trainDoorsOpen = open;
+    this.trainGate.enable = !open;
+    const d = TRAIN_DOOR;
+    for (let tx = d.x0; tx <= d.x1; tx++) {
+      if (open) this.nav.openDoor(tx, d.y);
+      else this.nav.closeDoor(tx, d.y);
+    }
+  }
+
   private inTrainZone(x: number, y: number): boolean {
     const T = CONFIG.tile;
     const z = TRAIN_ZONE;
@@ -846,7 +853,10 @@ export class MissionScene extends Phaser.Scene {
 
   /** Fermeture des portes : le bilan d'extraction est validé ici, une seule fois. */
   private closeDoors(): void {
-    if (this.inTrainZone(this.player.x, this.player.y)) {
+    const aboard = this.trainDoorsOpen && this.inTrainZone(this.player.x, this.player.y);
+    this.train.seal();
+    this.setTrainDoors(false);
+    if (aboard) {
       this.finish(true, this.morningTrain ? 'Le premier métro part avec vous. Vous avez tenu toute la nuit.' : 'La rame part avec vous.');
     } else {
       this.finish(
@@ -880,6 +890,7 @@ export class MissionScene extends Phaser.Scene {
       const mechanicAboard = !!c && c.following && this.inTrainZone(c.x, c.y);
       settleSuccess(mechanicAboard);
       lines.push(`Butin ramené : ${describeStock(gained)}.`);
+      lines.push(`Revente de la sortie : ${stockValue(gained)} CR.`);
       if (mechanicAboard) lines.push('Mécanicienne : à bord. Sauvetage validé. L\'atelier ouvre au refuge.');
       else if (c) lines.push('Mécanicienne : restée sur place. Le sauvetage reste ouvert.');
       lines.push(`Stock au refuge : ${stockValue(gameState.stock)} CR à vendre.`);
@@ -891,7 +902,7 @@ export class MissionScene extends Phaser.Scene {
       if (c) lines.push('Mécanicienne : toujours à sauver.');
     }
     // Dernier état du HUD avant le bilan (sinon il garde les PV d'avant le coup fatal).
-    this.game.events.emit('hud', this.hudData(this.now));
+    this.game.events.emit('hud', this.hudData());
     const payload: MissionEnd = {
       success,
       title: success ? 'RETOUR RÉUSSI' : 'ÉCHEC',
@@ -903,10 +914,18 @@ export class MissionScene extends Phaser.Scene {
 
   // --- Interface -----------------------------------------------------------
 
-  private hudData(time: number): HudData {
-    let escort: HudData['escort'] = 'none';
-    if (gameState.rescued.mecanicienne) escort = 'rescued';
-    else if (this.companion) escort = this.companion.following ? 'following' : 'waiting';
+  private objective(): string {
+    if (this.callEndsAt !== null) {
+      if (!this.trainDoorsOpen) return 'Attends l’ouverture des portes';
+      return this.inTrainZone(this.player.x, this.player.y) ? 'Reste à bord' : 'Monte dans la rame';
+    }
+    if (this.noMoreTrains()) return 'Survis jusqu’au premier métro';
+    if (this.companion?.following) return 'Ramène la mécanicienne au quai';
+    if (this.companion) return 'Trouve la mécanicienne';
+    return 'Fouille le quartier ou appelle la rame';
+  }
+
+  private hudData(): HudData {
     return {
       hp: this.hp,
       maxHp: this.maxHp,
@@ -917,8 +936,8 @@ export class MissionScene extends Phaser.Scene {
       phase: this.phase(),
       elapsed: this.elapsed,
       butin: { ...gameState.butin },
-      extraction: this.callEndsAt === null ? null : Math.max(0, Math.ceil((this.callEndsAt - time) / 1000)),
-      escort,
+      extraction: this.callEndsAt === null ? null : this.secondsLeft(),
+      objective: this.objective(),
     };
   }
 

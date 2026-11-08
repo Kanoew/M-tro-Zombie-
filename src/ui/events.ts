@@ -15,7 +15,7 @@ export interface HudData {
   butin: Stock;
   /** Secondes restantes avant la fermeture des portes, ou null si la rame n'est pas appelée. */
   extraction: number | null;
-  escort: 'none' | 'waiting' | 'following' | 'rescued';
+  objective: string;
 }
 
 /** Événement 'mission-end'. */

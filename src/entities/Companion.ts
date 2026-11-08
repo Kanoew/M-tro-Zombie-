@@ -24,15 +24,16 @@ export class Companion extends Phaser.Physics.Arcade.Sprite {
     this.setDepth(this.y);
   }
 
-  think(now: number): void {
+  think(now: number, boardingTarget?: { x: number; y: number }): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (!this.following) {
       this.setVelocity(0, 0);
     } else {
       const { nav, player } = this.ctx;
-      const d = Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y);
-      if (d > CONFIG.companion.followDistance) {
-        this.mover.moveTo(this, nav, player.x, player.y, CONFIG.player.speed * CONFIG.companion.speedFactor, now, 350);
+      const target = boardingTarget ?? player;
+      const d = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
+      if (d > (boardingTarget ? 3 : CONFIG.companion.followDistance)) {
+        this.mover.moveTo(this, nav, target.x, target.y, CONFIG.player.speed * CONFIG.companion.speedFactor, now, 350);
       } else {
         this.setVelocity(0, 0);
       }

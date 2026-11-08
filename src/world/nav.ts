@@ -64,6 +64,10 @@ export class Nav {
     this.closedDoors.delete(this.key(tx, ty));
   }
 
+  closeDoor(tx: number, ty: number): void {
+    this.closedDoors.add(this.key(tx, ty));
+  }
+
   /** Bloque la vue : mur ou porte fermée. */
   opaque(tx: number, ty: number): boolean {
     return !this.inside(tx, ty) || this.walls[ty][tx] || this.closedDoors.has(this.key(tx, ty));
