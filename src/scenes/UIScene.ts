@@ -8,13 +8,15 @@ const JOY_RADIUS = 48 * K;
 const FONT = 'monospace';
 const RESULT_LOCK_MS = 700; // évite de fermer le bilan par un appui encore en cours
 
-const BAR_X = 64 * K;
-const BAR_W = 130 * K;
+const BAR_X = 20 * K;
+const BAR_W = 112 * K;
+const DAY_X = 154 * K;
+const SPRINT_W = 44 * K;
 
-// Barre du jour (haut à droite) : jour, crépuscule, nuit.
-const DAY_W = 100 * K;
+// Barre du jour : jour, crépuscule, nuit et aube.
+const DAY_W = 130 * K;
 const DAY_H = 6 * K;
-const DAY_SPAN = CONFIG.time.dawnAt + 60; // jour, crépuscule, nuit, puis une minute d'aube
+const DAY_SPAN = CONFIG.time.dawnAt + CONFIG.extraction.closingSeconds; // jour, crépuscule, nuit, puis une minute d'aube
 
 /** Teinte de la lumière selon l'heure : blanche le jour, orangée au crépuscule, bleue la nuit. */
 const LIGHT_STOPS: [number, number][] = [
@@ -46,17 +48,16 @@ function lightAt(elapsed: number): number {
 
 /**
  * Interface en portrait : joystick tactile (moitié gauche), boutons
- * d'attaque, d'interaction et de course, vie et endurance, butin, compte à
- * rebours de la rame, bilan. Elle ne contient aucune règle de jeu : elle
- * écoute des événements du jeu et alimente les Controls.
+ * d'attaque, d'interaction et de course, HUD, pause et bilan.
+ * Elle écoute les événements de la mission et alimente les Controls.
  */
 export class UIScene extends Phaser.Scene {
   private joyId: number | null = null;
   private joyOrigin = new Phaser.Math.Vector2();
   private joyBase!: Phaser.GameObjects.Arc;
   private joyKnob!: Phaser.GameObjects.Arc;
-  private hudText!: Phaser.GameObjects.Text;
-  private timerText!: Phaser.GameObjects.Text;
+  private kitText!: Phaser.GameObjects.Text;
+  private objectiveText!: Phaser.GameObjects.Text;
   private promptText!: Phaser.GameObjects.Text;
   private toastText!: Phaser.GameObjects.Text;
   private toastTimer?: Phaser.Time.TimerEvent;
@@ -75,6 +76,9 @@ export class UIScene extends Phaser.Scene {
   private dayMarker!: Phaser.GameObjects.Rectangle;
   private dayLabel!: Phaser.GameObjects.Text;
   private flash!: Phaser.GameObjects.Rectangle;
+
+  private pauseLayer!: Phaser.GameObjects.Container;
+  private paused = false;
 
   private resultLayer!: Phaser.GameObjects.Container;
   private resultTitle!: Phaser.GameObjects.Text;
@@ -95,6 +99,7 @@ export class UIScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.input.addPointer(2);
     this.resultVisible = false;
+    this.paused = false;
     this.hud = null;
     this.hpShown = CONFIG.player.maxHp;
     this.stShown = CONFIG.player.stamina.max;
@@ -102,19 +107,8 @@ export class UIScene extends Phaser.Scene {
     this.buildAtmosphere(width, height);
     this.buildHud();
 
-    this.timerText = this.add
-      .text(width - 8 * K, 32 * K, '', {
-        fontFamily: FONT,
-        fontSize: `${16 * K}px`,
-        color: '#ffe27a',
-        backgroundColor: '#070b12cc',
-        padding: { x: 6 * K, y: 3 * K },
-      })
-      .setOrigin(1, 0)
-      .setVisible(false);
-
     this.toastText = this.add
-      .text(width / 2, 128 * K, '', {
+      .text(width / 2, 120 * K, '', {
         fontFamily: FONT,
         fontSize: `${12 * K}px`,
         color: '#ffffff',
@@ -155,7 +149,7 @@ export class UIScene extends Phaser.Scene {
     this.joyKnob = this.add.circle(0, 0, 20 * K, 0x8fe8f5, 0.45).setVisible(false);
 
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (this.resultVisible) return;
+      if (this.resultVisible || this.paused) return;
       if (this.joyId === null && p.x < width * 0.55 && p.y > height * 0.3) this.startJoy(p);
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
@@ -181,6 +175,7 @@ export class UIScene extends Phaser.Scene {
       9,
     );
 
+    this.buildPauseLayer(width, height);
     this.buildResultLayer(width, height);
 
     // Événements du jeu.
@@ -208,7 +203,11 @@ export class UIScene extends Phaser.Scene {
 
     // Raccourcis clavier depuis le bilan.
     this.input.keyboard?.on('keydown', (ev: KeyboardEvent) => {
-      if (!this.resultVisible || ev.repeat) return;
+      if (ev.repeat) return;
+      if (!this.resultVisible) {
+        if (ev.code === 'Escape') this.setPaused(!this.paused);
+        return;
+      }
       if (ev.code === 'KeyR') this.openRefuge();
       if (ev.code === 'KeyE' || ev.code === 'Space' || ev.code === 'Enter') this.requestRestart();
       if (ev.code === 'KeyM' || ev.code === 'Escape') this.requestMenu();
@@ -216,6 +215,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
+    if (this.paused) return;
     // Pluie en surimpression, et barres qui glissent vers leur valeur.
     this.rain.tilePositionX -= delta * 0.05;
     this.rain.tilePositionY -= delta * 0.9;
@@ -275,75 +275,66 @@ export class UIScene extends Phaser.Scene {
   // --- HUD -----------------------------------------------------------------
 
   private buildHud(): void {
-    // Médaillon du visage.
-    const cx = 36 * K;
-    const cy = 36 * K;
-    this.add.circle(cx, cy, 29 * K, 0x070b12, 0.85);
-    const face = this.add.image(cx, cy + 1 * K, 'joanna_face');
-    face.setScale((54 * K) / face.width);
-    const maskShape = this.make.graphics({ x: 0, y: 0 }, false);
-    maskShape.fillCircle(cx, cy, 26 * K);
-    face.setMask(maskShape.createGeometryMask());
-    this.add.circle(cx, cy, 28 * K).setStrokeStyle(2 * K, 0x35d6ff, 0.9);
+    const { width, height } = this.scale;
+    this.add.rectangle(12 * K, 12 * K, width - 24 * K, 88 * K, 0x070b12, 0.91)
+      .setOrigin(0)
+      .setStrokeStyle(K, 0x263c49);
 
-    // Vie : fond, traînée (dégâts récents), jauge, graduations, valeur.
-    const hpY = 18 * K;
-    const hpH = 15 * K;
-    this.add.rectangle(BAR_X - 2 * K, hpY - 2 * K, BAR_W + 4 * K, hpH + 4 * K, 0x05070c, 0.9).setOrigin(0);
+    const hpY = 31 * K;
+    const hpH = 7 * K;
+    this.add.text(BAR_X, 18 * K, 'PV', { fontFamily: FONT, fontSize: `${10 * K}px`, color: '#ffd9de' });
+    this.hpText = this.add
+      .text(BAR_X + BAR_W, 17 * K, '', { fontFamily: FONT, fontSize: `${11 * K}px`, color: '#ffffff', fontStyle: 'bold' })
+      .setOrigin(1, 0);
+    this.add.rectangle(BAR_X, hpY, BAR_W, hpH, 0x351923).setOrigin(0);
     this.hpGhost = this.add.rectangle(BAR_X, hpY, BAR_W, hpH, 0xffffff, 0.55).setOrigin(0);
     this.hpFill = this.add.rectangle(BAR_X, hpY, BAR_W, hpH, 0xe5384b).setOrigin(0);
-    const ticks = this.add.graphics();
-    ticks.lineStyle(1 * K, 0x05070c, 0.55);
-    for (let i = 1; i < 10; i++) ticks.lineBetween(BAR_X + (BAR_W * i) / 10, hpY, BAR_X + (BAR_W * i) / 10, hpY + hpH);
-    this.add.text(BAR_X + 3 * K, hpY + hpH / 2, 'PV', { fontFamily: FONT, fontSize: `${9 * K}px`, color: '#ffd9de', fontStyle: 'bold' }).setOrigin(0, 0.5);
-    this.hpText = this.add
-      .text(BAR_X + BAR_W - 3 * K, hpY + hpH / 2, '', { fontFamily: FONT, fontSize: `${10 * K}px`, color: '#ffffff', fontStyle: 'bold' })
-      .setOrigin(1, 0.5);
 
-    // Endurance.
-    const stY = hpY + hpH + 6 * K;
-    const stH = 9 * K;
-    this.stFrame = this.add.rectangle(BAR_X - 2 * K, stY - 2 * K, BAR_W + 4 * K, stH + 4 * K, 0x05070c, 0.9).setOrigin(0);
-    this.stFill = this.add.rectangle(BAR_X, stY, BAR_W, stH, 0xf2d04a).setOrigin(0);
-    this.add.text(BAR_X + 3 * K, stY + stH / 2, 'END', { fontFamily: FONT, fontSize: `${7 * K}px`, color: '#3b3200', fontStyle: 'bold' }).setOrigin(0, 0.5);
+    // Endurance contextuelle, au-dessus de la commande de course.
+    const stX = width - 52 * K - SPRINT_W / 2;
+    const stY = height - 181 * K;
+    this.stFrame = this.add.rectangle(stX, stY, SPRINT_W, 3 * K, 0x131722, 0.9).setOrigin(0).setVisible(false);
+    this.stFill = this.add.rectangle(stX, stY, SPRINT_W, 3 * K, 0xf2d04a).setOrigin(0).setVisible(false);
 
-    // Barre du jour : segments jour / crépuscule / nuit et curseur.
-    const dayX = this.scale.width - 8 * K - DAY_W;
-    const dayY = 12 * K;
+    const dayY = hpY;
     const seg = (from: number, to: number, color: number) =>
       this.add
-        .rectangle(dayX + (from / DAY_SPAN) * DAY_W, dayY, ((to - from) / DAY_SPAN) * DAY_W, DAY_H, color)
+        .rectangle(DAY_X + (from / DAY_SPAN) * DAY_W, dayY, ((to - from) / DAY_SPAN) * DAY_W, DAY_H, color)
         .setOrigin(0);
-    this.add.rectangle(dayX - 2 * K, dayY - 2 * K, DAY_W + 4 * K, DAY_H + 4 * K, 0x05070c, 0.9).setOrigin(0);
     seg(0, CONFIG.time.duskAt, 0xf2c14e);
     seg(CONFIG.time.duskAt, CONFIG.time.nightAt, 0xff7a2f);
     seg(CONFIG.time.nightAt, CONFIG.time.dawnAt, 0x4a5fc1);
     seg(CONFIG.time.dawnAt, DAY_SPAN, 0xffb3c7);
     // Repère du dernier appel de la rame.
-    this.add.rectangle(dayX + (CONFIG.time.lastCallAt / DAY_SPAN) * DAY_W, dayY - 2 * K, 1 * K, DAY_H + 4 * K, 0xff3b3b).setOrigin(0.5, 0);
-    this.dayMarker = this.add.rectangle(dayX, dayY - 3 * K, 2 * K, DAY_H + 6 * K, 0xffffff).setOrigin(0.5, 0);
+    this.add.rectangle(DAY_X + (CONFIG.time.lastCallAt / DAY_SPAN) * DAY_W, dayY - 2 * K, K, DAY_H + 4 * K, 0xff3b3b).setOrigin(0.5, 0);
+    this.dayMarker = this.add.rectangle(DAY_X, dayY - 2 * K, 2 * K, DAY_H + 4 * K, 0xffffff).setOrigin(0.5, 0);
     this.dayLabel = this.add
-      .text(this.scale.width - 8 * K, dayY + DAY_H + 4 * K, 'JOUR', { fontFamily: FONT, fontSize: `${8 * K}px`, color: '#f2c14e' })
-      .setOrigin(1, 0);
+      .text(DAY_X, 18 * K, 'JOUR', { fontFamily: FONT, fontSize: `${10 * K}px`, color: '#f2c14e' });
 
-    // Butin, survivante.
-    this.hudText = this.add
-      .text(8 * K, 78 * K, '', {
-        fontFamily: FONT,
-        fontSize: `${10 * K}px`,
-        color: '#8fe8f5',
-        backgroundColor: '#070b12aa',
-        padding: { x: 4 * K, y: 2 * K },
-        lineSpacing: 2 * K,
-      })
-      .setScrollFactor(0);
+    const pause = this.add.rectangle(width - 43 * K, 39 * K, 48 * K, 46 * K, 0x14243c)
+      .setStrokeStyle(K, 0x385361)
+      .setInteractive({ useHandCursor: true });
+    pause.on('pointerdown', () => this.setPaused(true));
+    this.add.rectangle(pause.x - 3 * K, pause.y, 3 * K, 13 * K, 0xcfe9ee);
+    this.add.rectangle(pause.x + 3 * K, pause.y, 3 * K, 13 * K, 0xcfe9ee);
+
+    this.add.rectangle(BAR_X, 48 * K, 258 * K, K, 0x263c49).setOrigin(0);
+    this.objectiveText = this.add.text(BAR_X, 55 * K, '', {
+      fontFamily: FONT, fontSize: `${13 * K}px`, color: '#e6f4f8', fontStyle: 'bold',
+    });
+    this.kitText = this.add.text(BAR_X, 78 * K, '', {
+      fontFamily: FONT, fontSize: `${10 * K}px`, color: '#a7b6c0',
+    });
   }
 
   private renderHud(h: HudData): void {
+    if (!this.hud) {
+      this.hpShown = h.hp;
+      this.stShown = h.stamina;
+    }
     this.hud = h;
     this.tint.setFillStyle(lightAt(h.elapsed), 1);
-    const dayX = this.scale.width - 8 * K - DAY_W;
-    this.dayMarker.setX(dayX + Math.min(1, h.elapsed / DAY_SPAN) * DAY_W);
+    this.dayMarker.setX(DAY_X + Math.min(1, h.elapsed / DAY_SPAN) * DAY_W);
     const t = CONFIG.time;
     const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
     // Le crépuscule annonce le dernier appel ; la nuit compte jusqu'au premier métro.
@@ -355,26 +346,11 @@ export class UIScene extends Phaser.Scene {
     };
     const [label, color] = labels[h.phase];
     this.dayLabel.setText(label).setColor(color);
-    const escort = {
-      none: '',
-      waiting: '\nMÉCANICIENNE : À SAUVER',
-      following: '\nMÉCANICIENNE : AVEC VOUS',
-      rescued: '\nMÉCANICIENNE : AU REFUGE',
-    }[h.escort];
     const b = h.butin;
-    this.hudText.setText(
-      `${h.weapon.toUpperCase()}\n` + `BUTIN  MAT ${b.materials} · VAL ${b.valuables} · RARE ${b.rare}` + escort,
-    );
-    if (h.extraction === null) {
-      this.timerText.setVisible(false);
-    } else {
-      const m = Math.floor(h.extraction / 60);
-      const s = String(h.extraction % 60).padStart(2, '0');
-      this.timerText
-        .setText(`RAME ${m}:${s}`)
-        .setColor(h.extraction <= 10 ? '#ff6666' : '#ffe27a')
-        .setVisible(!this.resultVisible);
-    }
+    this.kitText.setText(`${h.weapon.toUpperCase()} · MAT ${b.materials} · VAL ${b.valuables} · RARE ${b.rare}`);
+    const countdown = h.extraction === null ? '' : ` · ${clock(h.extraction)}`;
+    this.objectiveText.setText(h.objective + countdown)
+      .setColor(h.extraction === null ? '#e6f4f8' : h.extraction <= 10 ? '#ff8a8a' : '#ffe27a');
   }
 
   private drawBars(h: HudData): void {
@@ -388,9 +364,52 @@ export class UIScene extends Phaser.Scene {
     this.hpFill.setAlpha(hpRatio <= 0.25 ? 0.65 + 0.35 * Math.sin(this.time.now / 110) : 1);
 
     const stRatio = Math.max(0, this.stShown / h.maxStamina);
-    this.stFill.setSize(Math.max(0.01, BAR_W * stRatio), this.stFill.height);
+    const showStamina = h.exhausted || stRatio < 0.99;
+    this.stFrame.setVisible(showStamina);
+    this.stFill.setVisible(showStamina);
+    this.stFill.setSize(Math.max(0.01, SPRINT_W * stRatio), this.stFill.height);
     this.stFill.setFillStyle(h.exhausted ? 0xff7a2f : 0xf2d04a);
     this.stFrame.setStrokeStyle(h.exhausted ? 2 * K : 0, 0xff7a2f, 0.9);
+  }
+
+  // --- Pause ---------------------------------------------------------------
+
+  private buildPauseLayer(width: number, height: number): void {
+    const x = width / 2;
+    const y = height / 2;
+    const shade = this.add.rectangle(x, y, width, height, 0x070b12, 0.8).setInteractive();
+    const panel = this.add.rectangle(x, y, width - 56 * K, 152 * K, 0x0d1727)
+      .setStrokeStyle(K, 0x385361);
+    const title = this.add.text(x, y - 42 * K, 'PAUSE', {
+      fontFamily: FONT, fontSize: `${24 * K}px`, color: '#e6f4f8', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    const resume = this.add.rectangle(x, y + 31 * K, 206 * K, 48 * K, 0x15323c)
+      .setStrokeStyle(K, 0x58e6cc)
+      .setInteractive({ useHandCursor: true });
+    resume.on('pointerup', () => this.setPaused(false));
+    const label = this.add.text(resume.x, resume.y, 'REPRENDRE', {
+      fontFamily: FONT, fontSize: `${14 * K}px`, color: '#e6f4f8', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    this.pauseLayer = this.add.container(0, 0, [shade, panel, title, resume, label])
+      .setDepth(99)
+      .setVisible(false);
+  }
+
+  private setPaused(paused: boolean): void {
+    if (this.resultVisible || this.paused === paused) return;
+    this.paused = paused;
+    this.pauseLayer.setVisible(paused);
+    if (paused) {
+      this.endJoy();
+      this.controls.touchSprint = false;
+      this.controls.consumeInteract();
+      this.controls.consumeAttack();
+      this.controls.consumeSwitch();
+      this.scene.get('Mission').input.keyboard?.resetKeys();
+      this.scene.pause('Mission');
+    } else {
+      this.scene.resume('Mission');
+    }
   }
 
   // --- Bilan ---------------------------------------------------------------
@@ -440,10 +459,10 @@ export class UIScene extends Phaser.Scene {
     this.resultBody.setText([end.reason, '', ...end.lines].join('\n'));
     this.resultLayer.setVisible(true);
     this.promptText.setVisible(false);
-    this.timerText.setVisible(false);
   }
 
   private hideResult(): void {
+    this.hud = null;
     this.resultVisible = false;
     this.resultLayer.setVisible(false);
   }
@@ -489,6 +508,7 @@ export class UIScene extends Phaser.Scene {
       .text(x, y, label, { fontFamily: FONT, fontSize: `${fontSize * K}px`, color: '#ffffff' })
       .setOrigin(0.5);
     btn.on('pointerdown', () => {
+      if (this.paused || this.resultVisible) return;
       btn.setFillStyle(color, 0.6);
       onPress();
     });

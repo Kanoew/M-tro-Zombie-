@@ -123,6 +123,7 @@ export class MissionScene extends Phaser.Scene {
     startMission();
 
     this.ended = false;
+    this.now = 0;
     this.elapsed = 0;
     this.lastPhase = 'day';
     // Améliorations de l'atelier : lues une fois au départ de la sortie.
@@ -249,8 +250,10 @@ export class MissionScene extends Phaser.Scene {
     );
   }
 
-  update(time: number, delta: number): void {
-    this.now = time;
+  update(_frameTime: number, delta: number): void {
+    // Le temps de mission n’avance pas quand la scène est en pause.
+    this.now += delta;
+    const time = this.now;
     this.fog.tilePositionX += delta * 0.006;
     this.fog.tilePositionY += delta * 0.002;
     if (this.ended) return;
@@ -316,7 +319,7 @@ export class MissionScene extends Phaser.Scene {
 
     if (time >= this.nextHudAt) {
       this.nextHudAt = time + 100;
-      this.game.events.emit('hud', this.hudData(time));
+      this.game.events.emit('hud', this.hudData());
     }
   }
 
@@ -891,7 +894,7 @@ export class MissionScene extends Phaser.Scene {
       if (c) lines.push('Mécanicienne : toujours à sauver.');
     }
     // Dernier état du HUD avant le bilan (sinon il garde les PV d'avant le coup fatal).
-    this.game.events.emit('hud', this.hudData(this.now));
+    this.game.events.emit('hud', this.hudData());
     const payload: MissionEnd = {
       success,
       title: success ? 'RETOUR RÉUSSI' : 'ÉCHEC',
@@ -903,10 +906,17 @@ export class MissionScene extends Phaser.Scene {
 
   // --- Interface -----------------------------------------------------------
 
-  private hudData(time: number): HudData {
-    let escort: HudData['escort'] = 'none';
-    if (gameState.rescued.mecanicienne) escort = 'rescued';
-    else if (this.companion) escort = this.companion.following ? 'following' : 'waiting';
+  private objective(): string {
+    if (this.callEndsAt !== null) {
+      return this.inTrainZone(this.player.x, this.player.y) ? 'Reste à bord' : 'Monte dans la rame';
+    }
+    if (this.noMoreTrains()) return 'Survis jusqu’au premier métro';
+    if (this.companion?.following) return 'Ramène la mécanicienne au quai';
+    if (this.companion) return 'Trouve la mécanicienne';
+    return 'Fouille le quartier ou appelle la rame';
+  }
+
+  private hudData(): HudData {
     return {
       hp: this.hp,
       maxHp: this.maxHp,
@@ -917,8 +927,8 @@ export class MissionScene extends Phaser.Scene {
       phase: this.phase(),
       elapsed: this.elapsed,
       butin: { ...gameState.butin },
-      extraction: this.callEndsAt === null ? null : Math.max(0, Math.ceil((this.callEndsAt - time) / 1000)),
-      escort,
+      extraction: this.callEndsAt === null ? null : this.secondsLeft(),
+      objective: this.objective(),
     };
   }
 

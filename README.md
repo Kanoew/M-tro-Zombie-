@@ -15,6 +15,7 @@ npm run build    # vérification TypeScript + build dans dist/
 
 - Clavier : ZQSD, WASD ou flèches pour bouger, **Maj** pour courir, E ou Espace pour interagir, F ou J pour attaquer, **Tab** pour changer d'arme.
 - Tactile : joystick flottant sur la moitié gauche de l'écran, boutons ACT, ATQ et COURIR (maintenu) à droite.
+- En sortie, le bouton pause en haut à droite ou **Échap** suspend la partie et ses comptes à rebours.
 - Courir consomme l'endurance (barre jaune). À zéro, on est épuisé : la course reste bloquée jusqu'à récupération. Courir se remarque de plus loin.
 
 ## Règles du lot 2
