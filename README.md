@@ -35,17 +35,17 @@ Les armes sont des données dans `src/weapons.ts` (dégâts, cadence, portée, *
 
 ## Le dernier métro (jour, crépuscule, nuit, aube)
 
-Horloge depuis le départ du camp (`time` dans `src/config.ts`) :
+Une partie dure moins de 10 minutes. Horloge depuis le départ du camp (`time` dans `src/config.ts`) :
 
 | Heure | Phase | Ce qui se passe |
 |---|---|---|
 | 0:00 | Jour | La borne appelle la rame normalement. |
-| 6:30 | Crépuscule | Le talkie prévient, la lumière tourne à l'orange. La barre affiche le compte à rebours du dernier appel. |
-| 7:30 | Dernier appel | Passé ce cap, la borne ne répond plus. Une rame appelée avant part au plus tard à 8:30. |
-| 8:30 | Nuit | Plus aucune rame. Les infectés entendent 1,6 fois plus loin, voient plus loin et courent plus vite. La barre compte jusqu'à l'aube. |
-| 13:00 | Aube | Le premier métro du matin arrive tout seul et attend 60 s. À bord à la fermeture : retour réussi, butin x1,5 (`morning.lootBonus`). Raté : échec. |
+| 5:00 | Crépuscule | Le talkie prévient, la lumière tourne à l'orange. La barre affiche le compte à rebours du dernier appel. |
+| 5:30 | Dernier appel | Passé ce cap, la borne ne répond plus. Une rame appelée avant part au plus tard à 6:30. |
+| 6:30 | Nuit (2 min) | Plus aucune rame. **Vagues** : des rôdeurs entrent par les bords de la carte et fouillent les alentours du joueur, de plus en plus souvent (toutes les 6 s puis 3 s, 14 en vie au maximum). **6 caisses de nuit** (lueur cyan) tombent dans la rue : 25 % de pièce rare, 40 % d'objet de valeur. Les infectés entendent 1,6 fois plus loin, voient plus loin et courent plus vite. |
+| 8:30 | Aube | Le premier métro du matin arrive tout seul et attend 60 s. À bord à la fermeture : retour réussi, butin x2 (`morning.lootBonus`). Raté : échec. |
 
-Le repère rouge sur la barre du jour marque le dernier appel. La teinte de lumière demande WebGL (désactivée en rendu 2D de secours).
+Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la barre du jour marque le dernier appel. La teinte de lumière demande WebGL (désactivée en rendu 2D de secours).
 
 ## Carte et décor
 
