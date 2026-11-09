@@ -115,6 +115,7 @@ export class MissionScene extends Phaser.Scene {
   private nextWaveAt = 0;
   private nextWaitNoiseAt = 0;
   private nextReinforceAt = 0;
+  private extractionReinforcements = 0;
   private train!: MetroView;
   private trainGate!: Phaser.Physics.Arcade.StaticBody;
   private trainDoorsOpen = false;
@@ -514,9 +515,15 @@ export class MissionScene extends Phaser.Scene {
       label: night ? 'Fouiller la caisse de nuit' : 'Fouiller la caisse',
       active: true,
       use: () => {
+        if (!it.active) return;
         it.active = false;
-        sprite.setTexture('crate_open');
-        glow?.destroy();
+        sprite.disableBody(true, true).destroy();
+        this.nav.removeSolid(e.tx, e.ty);
+        this.interactables = this.interactables.filter((candidate) => candidate !== it);
+        if (glow) {
+          this.tweens.killTweensOf(glow);
+          glow.destroy();
+        }
         const found = this.rollLoot(night);
         this.emitNoise(x, y, CONFIG.noise.crateOpened, e.id);
         this.toast(`Caisse ouverte : ${found}. Ça fait du bruit.`);
@@ -713,15 +720,18 @@ export class MissionScene extends Phaser.Scene {
     }
     this.morningTrain = morning;
     const X = CONFIG.extraction;
+    const entry = this.rank === 'E' ? X.rankE : null;
     this.callEndsAt = this.now + X.closingSeconds * 1000;
     this.nextWaitNoiseAt = this.now + X.waitNoiseEveryMs;
-    this.nextReinforceAt = this.now + 2500;
+    this.nextReinforceAt = this.now + (entry?.firstReinforceMs ?? 2500);
+    this.extractionReinforcements = 0;
     const t = this.terminalPos();
-    this.emitNoise(t.x, t.y, CONFIG.noise.quayAnnouncement, 'annonce-quai', CONFIG.noise.quayVisual);
+    this.emitNoise(t.x, t.y, entry?.announcementRadius ?? CONFIG.noise.quayAnnouncement,
+      'annonce-quai', entry?.announcementRadius ?? CONFIG.noise.quayVisual);
     this.toast(
       morning
         ? `Premier métro du matin. Fermeture des portes dans ${X.closingSeconds} s.`
-        : `Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. Tous les infectés arrivent.`,
+        : `Rame appelée. Fermeture des portes dans ${X.closingSeconds} s. ${entry ? 'Les infectés proches approchent.' : 'Tous les infectés arrivent.'}`,
     );
 
     this.train.arrive(() => {
@@ -737,19 +747,23 @@ export class MissionScene extends Phaser.Scene {
   private updateExtraction(time: number): void {
     if (this.callEndsAt === null) return;
     const X = CONFIG.extraction;
+    const entry = this.rank === 'E' ? X.rankE : null;
     const left = this.callEndsAt - time;
 
-    // Tant que la rame attend, le quai fait du bruit : les infectés encore en vie y convergent...
+    // Le bruit reste local en E. Les autres portes attirent tout le quartier.
     if (time >= this.nextWaitNoiseAt) {
       this.nextWaitNoiseAt = time + X.waitNoiseEveryMs;
       const t = this.terminalPos();
-      this.emitNoise(t.x, t.y, CONFIG.noise.quayWaiting, 'rame-en-attente', CONFIG.noise.quayVisual);
+      this.emitNoise(t.x, t.y, entry?.waitingRadius ?? CONFIG.noise.quayWaiting,
+        'rame-en-attente', entry?.waitingRadius ?? CONFIG.noise.quayVisual);
     }
     // ... et d'autres arrivent des bords de la carte.
-    if (time >= this.nextReinforceAt) {
-      this.nextReinforceAt = time + X.reinforceEveryMs;
+    if (time >= this.nextReinforceAt && (!entry || this.extractionReinforcements < entry.maxReinforcements)) {
+      this.nextReinforceAt = time + (entry?.reinforceEveryMs ?? X.reinforceEveryMs);
       const cap = X.reinforceMaxAlive + CONFIG.ranks[this.rank].extraInfected;
-      if (this.infected.filter((i) => !i.dead).length < cap) this.spawnReinforcement();
+      if (this.infected.filter((i) => !i.dead).length < cap && this.spawnReinforcement()) {
+        this.extractionReinforcements++;
+      }
     }
 
     // Les portes clignotent sur les 10 dernières secondes.

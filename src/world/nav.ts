@@ -16,10 +16,14 @@ export class Nav {
   private readonly walls: boolean[][];
   private readonly closedDoors = new Set<number>();
   private readonly solids = new Set<number>();
+  private readonly previous: Int32Array;
+  private readonly queue: Int32Array;
 
   constructor(map: MapData, readonly tile: number) {
     this.w = map.width;
     this.h = map.height;
+    this.previous = new Int32Array(this.w * this.h);
+    this.queue = new Int32Array(this.previous.length);
     this.walls = map.tiles.map((row) => row.map((t) => t === 'wall'));
     for (const e of map.entities) {
       if (e.kind === 'door' && !e.open) this.closedDoors.add(this.key(e.tx, e.ty));
@@ -42,6 +46,10 @@ export class Nav {
   /** Obstacle posé en cours de partie (caisse de nuit). */
   addSolid(tx: number, ty: number): void {
     if (this.inside(tx, ty)) this.solids.add(this.key(tx, ty));
+  }
+
+  removeSolid(tx: number, ty: number): void {
+    this.solids.delete(this.key(tx, ty));
   }
 
   private key(tx: number, ty: number): number {
@@ -120,13 +128,17 @@ export class Nav {
     const atGoal = (x: number, y: number) =>
       targetBlocked ? Math.max(Math.abs(x - gx), Math.abs(y - gy)) <= 1 : x === gx && y === gy;
 
-    const prev = new Map<number, number>();
+    // Tampons réutilisés pour éviter les allocations en rafale quand la rame attire une foule.
+    const prev = this.previous;
+    const queue = this.queue;
+    prev.fill(-2);
     const start = this.key(sx, sy);
-    prev.set(start, -1);
-    const queue: number[] = [start];
+    prev[start] = -1;
+    queue[0] = start;
+    let tail = 1;
     let found = -1;
 
-    for (let head = 0; head < queue.length && found < 0; head++) {
+    for (let head = 0; head < tail && found < 0; head++) {
       const cur = queue[head];
       const cx = cur % this.w;
       const cy = Math.floor(cur / this.w);
@@ -141,13 +153,13 @@ export class Nav {
             continue;
           }
           const k = this.key(nx, ny);
-          if (prev.has(k)) continue;
-          prev.set(k, cur);
+          if (prev[k] !== -2) continue;
+          prev[k] = cur;
           if (atGoal(nx, ny)) {
             found = k;
             break;
           }
-          queue.push(k);
+          queue[tail++] = k;
         }
         if (found >= 0) break;
       }
@@ -155,7 +167,7 @@ export class Nav {
     if (found < 0) return null;
 
     const pts: Point[] = [];
-    for (let k = found; k !== start && k !== -1; k = prev.get(k) ?? -1) {
+    for (let k = found; k !== start; k = prev[k]) {
       pts.push({ x: this.center(k % this.w), y: this.center(Math.floor(k / this.w)) });
     }
     pts.reverse();

@@ -162,9 +162,11 @@ export class Infected extends Phaser.Physics.Arcade.Sprite {
   }
 
   private beginInvestigate(x: number, y: number): void {
+    // Les impulsions successives d'une même borne prolongent l'enquête sans refaire le trajet.
+    this.lingerMs = 0;
+    if (this.mode === 'investigate' && this.target.x === x && this.target.y === y) return;
     this.mode = 'investigate';
     this.target.set(x, y);
-    this.lingerMs = 0;
     this.mover.reset();
   }
 

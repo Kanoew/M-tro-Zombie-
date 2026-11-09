@@ -69,6 +69,13 @@ export const CONFIG = {
     reinforceEveryMs: 6500, // et attire de nouveaux infectés
     reinforceMaxAlive: 30,
     reinforceMinDistance: 220, // px : ils arrivent hors de vue
+    rankE: {
+      announcementRadius: 180,
+      waitingRadius: 140,
+      firstReinforceMs: 10000,
+      reinforceEveryMs: 18000,
+      maxReinforcements: 2, // sur les 60 s, même si les premiers sont éliminés
+    },
   },
 
   // Rayons de bruit (px). Les infectés à portée se déplacent vers la source.

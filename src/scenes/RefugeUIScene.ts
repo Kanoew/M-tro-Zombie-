@@ -37,7 +37,6 @@ export class RefugeUIScene extends Phaser.Scene {
 
   create(): void {
     const { width, height } = this.scale;
-    this.input.addPointer(2);
     this.joyId = null;
 
     this.add.rectangle(width / 2, 0, width, 52 * K, 0x070b12, 0.85).setOrigin(0.5, 0);
@@ -183,14 +182,16 @@ export class RefugeUIScene extends Phaser.Scene {
   }
 
   private moveJoy(p: Phaser.Input.Pointer): void {
-    const delta = new Phaser.Math.Vector2(p.x - this.joyOrigin.x, p.y - this.joyOrigin.y);
-    const len = Math.min(delta.length(), JOY_RADIUS);
-    if (delta.lengthSq() > 0) delta.normalize().scale(len);
-    this.joyKnob.setPosition(this.joyOrigin.x + delta.x, this.joyOrigin.y + delta.y);
-    const strength = len / JOY_RADIUS;
-    if (!this.controls) return;
-    this.controls.touch.copy(strength < 0.15 ? new Phaser.Math.Vector2() : delta.scale(1 / len || 0));
-    if (strength >= 0.15) this.controls.touch.scale(strength);
+    const dx = p.x - this.joyOrigin.x;
+    const dy = p.y - this.joyOrigin.y;
+    const distance = Math.hypot(dx, dy);
+    const scale = JOY_RADIUS / Math.max(JOY_RADIUS, distance);
+    const x = dx * scale;
+    const y = dy * scale;
+    this.joyKnob.setPosition(this.joyOrigin.x + x, this.joyOrigin.y + y);
+    const touch = this.controls?.touch;
+    if (distance < JOY_RADIUS * 0.15) touch?.set(0, 0);
+    else touch?.set(x / JOY_RADIUS, y / JOY_RADIUS);
   }
 
   private endJoy(): void {

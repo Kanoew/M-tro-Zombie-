@@ -24,6 +24,7 @@ const game = new Phaser.Game({
   // Personnages et décor peints : lissage actif. Les tuiles dessinées en code restent nettes (voir textures.ts).
   pixelArt: false,
   antialias: true,
+  input: { activePointers: 3 },
   physics: { default: 'arcade', arcade: { debug: false } },
   scale: {
     mode: Phaser.Scale.FIT,
