@@ -7,7 +7,7 @@ import {
   describeStock,
   gameState,
   sellStock,
-  stockValue,
+  stockResaleValue,
   upgradeCost,
   type UpgradeId,
 } from '../state/gameState';
@@ -145,7 +145,7 @@ export class RefugePanel {
   }
 
   private refresh(): void {
-    const value = stockValue(gameState.stock);
+    const value = stockResaleValue();
     this.credits.setText(`${gameState.credits} CR`);
     this.stock.setText(`Stock : ${describeStock(gameState.stock)}`);
     this.sell.text.setText(value > 0 ? `VENDRE LE STOCK  +${value} CR` : 'RIEN À VENDRE');

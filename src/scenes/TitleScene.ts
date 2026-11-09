@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { selectCharacter } from '../state/gameState';
+import { gameState, selectCharacter } from '../state/gameState';
 
 const FONT = 'monospace';
 
@@ -64,6 +64,10 @@ export class TitleScene extends Phaser.Scene {
         color: '#bcd4de',
       })
       .setOrigin(0.5);
+
+    this.add.text(width / 2, 398, `Rang le plus haut : ${gameState.highestRank}`, {
+      fontFamily: FONT, fontSize: '22px', color: '#ffe27a',
+    }).setOrigin(0.5);
 
     this.add
       .text(width / 2, 450, 'CHOISIS TON PERSONNAGE', { fontFamily: FONT, fontSize: '24px', color: '#8fe8f5' })

@@ -3,6 +3,7 @@ import { CONFIG } from '../config';
 
 export type Dir = 'down' | 'side' | 'up';
 export const INFECTED_SHEET = 'zombie-outlined';
+export const RUNNER_SHEET = 'runner-outlined';
 const ZOMBIE_SHEET = { key: 'zombie', file: 'zombie.png', frameWidth: 124, frameHeight: 112 };
 
 /** Planches (colonnes x rangées) : rangées = face, profil droit, dos. */
@@ -57,7 +58,8 @@ export function loadArt(scene: Phaser.Scene): void {
 
 /** Animations globales : `<perso>-walk|idle-<down|side|up>`, plus `zombie-attack`. */
 export function createAnimations(scene: Phaser.Scene): void {
-  createInfectedOutline(scene);
+  createInfectedOutline(scene, INFECTED_SHEET, '#ffc19d');
+  createInfectedOutline(scene, RUNNER_SHEET, '#da91ff');
   const anims = scene.anims;
   const dirs: Dir[] = ['down', 'side', 'up'];
 
@@ -74,15 +76,14 @@ export function createAnimations(scene: Phaser.Scene): void {
       frameRate: 1,
       repeat: -1,
     });
-    anims.create({ key: `zombie-walk-${d}`, frames: row(INFECTED_SHEET, r), frameRate: 6, repeat: -1 });
-    anims.create({
-      key: `zombie-idle-${d}`,
-      frames: [{ key: INFECTED_SHEET, frame: r * 4 }],
-      frameRate: 1,
-      repeat: -1,
-    });
   });
-  anims.create({ key: 'zombie-attack', frames: row(INFECTED_SHEET, 3), frameRate: 9, repeat: 0 });
+  for (const [prefix, sheet, rate] of [['zombie', INFECTED_SHEET, 6], ['runner', RUNNER_SHEET, 10]] as const) {
+    dirs.forEach((d, r) => {
+      anims.create({ key: `${prefix}-walk-${d}`, frames: row(sheet, r), frameRate: rate, repeat: -1 });
+      anims.create({ key: `${prefix}-idle-${d}`, frames: [{ key: sheet, frame: r * 4 }], frameRate: 1, repeat: -1 });
+    });
+    anims.create({ key: `${prefix}-attack`, frames: row(sheet, 3), frameRate: 9, repeat: 0 });
+  }
   // Tir à l'arc (profil droit) : 6 poses, la flèche part à la 4e.
   anims.create({
     key: 'joanna-shoot',
@@ -93,16 +94,16 @@ export function createAnimations(scene: Phaser.Scene): void {
 }
 
 /** Contour précalculé une fois, commun aux rendus Canvas et WebGL. */
-function createInfectedOutline(scene: Phaser.Scene): void {
+function createInfectedOutline(scene: Phaser.Scene, key: string, color: string): void {
   const source = scene.textures.get(ZOMBIE_SHEET.key).getSourceImage() as HTMLImageElement;
-  const texture = scene.textures.createCanvas(INFECTED_SHEET, source.width, source.height)!;
+  const texture = scene.textures.createCanvas(key, source.width, source.height)!;
   const silhouette = document.createElement('canvas');
   silhouette.width = source.width;
   silhouette.height = source.height;
   const mask = silhouette.getContext('2d')!;
   mask.drawImage(source, 0, 0);
   mask.globalCompositeOperation = 'source-in';
-  mask.fillStyle = '#ffc19d';
+  mask.fillStyle = color;
   mask.fillRect(0, 0, source.width, source.height);
 
   // La planche laisse au moins trois pixels transparents autour de chaque pose.
@@ -112,7 +113,7 @@ function createInfectedOutline(scene: Phaser.Scene): void {
   }
   ctx.drawImage(source, 0, 0);
   texture.refresh();
-  scene.textures.addSpriteSheet(INFECTED_SHEET, texture, ZOMBIE_SHEET);
+  scene.textures.addSpriteSheet(key, texture, ZOMBIE_SHEET);
 }
 
 /** Échelle, origine aux pieds et zone de collision d'un personnage peint. */

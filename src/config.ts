@@ -3,6 +3,9 @@
  * règlent ici, jamais dans les scènes. Les valeurs de départ viennent du
  * cahier des charges et sont faites pour être ajustées aux essais.
  */
+export const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'] as const;
+export type Rank = (typeof RANKS)[number];
+
 export const CONFIG = {
   // Résolution logique en portrait (2x 360x640) : texte et interface nets sur téléphone.
   // Le monde est vu avec un zoom de 4 : on voit 180x320 px de carte, comme avant.
@@ -47,7 +50,6 @@ export const CONFIG = {
   night: {
     waveEveryStartMs: 6000, // un rôdeur toutes les 6 s au début de la nuit...
     waveEveryEndMs: 3000, // ... toutes les 3 s juste avant l'aube
-    waveMaxAlive: 14, // les renforts nocturnes sont bloqués dès ce total d'infectés en vie
     waveTargetSpread: 200, // px : ils fouillent les alentours du joueur, pas sa position exacte
     crates: 6, // caisses de nuit larguées dans la rue à la tombée de la nuit
     crateMinDistance: 90, // px du joueur
@@ -79,7 +81,6 @@ export const CONFIG = {
     quayVisual: 260, // rayon de l'onde affichée
   },
 
-  // Un seul type d'infecté au prototype.
   infected: {
     speed: 45, // plus lent que le joueur (85) : on peut les distancer le jour
     wanderSpeed: 18,
@@ -95,6 +96,17 @@ export const CONFIG = {
     contactCooldownMs: 900,
     contactRange: 11,
     knockbackMs: 140,
+    runnerSpeedFactor: 1.45,
+  },
+
+  // Valeurs de départ à tester. Un coureur remplace un infecté sur N à partir de C.
+  ranks: {
+    E: { extraInfected: 0, speed: 1, waveInterval: 1, waveMaxAlive: 5, lootValue: 1, runnerEvery: 0 },
+    D: { extraInfected: 3, speed: 1.06, waveInterval: 0.90, waveMaxAlive: 6, lootValue: 1.25, runnerEvery: 0 },
+    C: { extraInfected: 6, speed: 1.12, waveInterval: 0.80, waveMaxAlive: 7, lootValue: 1.50, runnerEvery: 6 },
+    B: { extraInfected: 10, speed: 1.18, waveInterval: 0.70, waveMaxAlive: 8, lootValue: 1.85, runnerEvery: 5 },
+    A: { extraInfected: 14, speed: 1.24, waveInterval: 0.62, waveMaxAlive: 10, lootValue: 2.25, runnerEvery: 4 },
+    S: { extraInfected: 18, speed: 1.30, waveInterval: 0.55, waveMaxAlive: 12, lootValue: 2.75, runnerEvery: 3 },
   },
 
   companion: {
@@ -115,10 +127,10 @@ export const CONFIG = {
   // La valeur à la revente au bilan permet de mesurer les gains par sortie.
   economy: {
     sellPrices: { materials: 1, valuables: 12, rare: 40 }, // crédits par unité (matériaux : réservés au camp plus tard)
-    upgradeCosts: [150, 350, 600], // niveaux 1, 2, 3
-    hpPerLevel: 25, // 100 -> 125 -> 150 -> 175 PV
-    staminaPerLevel: 25, // 100 -> 175 d'endurance
-    bowDamagePerLevel: 4, // 20 -> 32 : au niveau 3, une flèche suffit (infecté : 30 PV)
+    upgradeCosts: [150, 350, 600, 1000, 1600],
+    hpPerLevel: 25,
+    staminaPerLevel: 25,
+    bowDamagePerLevel: 4, // dès le niveau 3, une flèche suffit (infecté : 30 PV)
   },
 
   // Butin d'une caisse.

@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
-import { CONFIG } from '../config';
+import { CONFIG, type Rank } from '../config';
 import { Controls } from '../input/Controls';
 import { Animator, setupCharacter } from '../render/characters';
-import { gameState, stockValue } from '../state/gameState';
+import { gameState, isRankOpen, stockResaleValue } from '../state/gameState';
 import { CAMP_IMAGE_WIDTH, campBlockers } from '../world/map';
 
 /** Largeur du refuge dans le monde (px), comme l'ancien camp : 20 tuiles. */
@@ -43,6 +43,7 @@ export class RefugeScene extends Phaser.Scene {
   private spots: Spot[] = [];
   private lastPrompt: string | null = null;
   private busy = false;
+  private departing = false;
 
   constructor() {
     super({ key: 'Refuge' });
@@ -50,6 +51,7 @@ export class RefugeScene extends Phaser.Scene {
 
   create(): void {
     this.busy = false;
+    this.departing = false;
     this.lastPrompt = null;
     const src = this.textures.get('camp').getSourceImage();
     const campH = (CAMP_W * src.height) / src.width;
@@ -87,13 +89,13 @@ export class RefugeScene extends Phaser.Scene {
     this.physics.add.collider(this.player, solids);
 
     this.spots = [
-      { id: 'comptoir', ...SPOTS.comptoir, label: () => `Comptoir : vendre le stock (${stockValue(gameState.stock)} CR)` },
+      { id: 'comptoir', ...SPOTS.comptoir, label: () => `Comptoir : vendre le stock (${stockResaleValue()} CR)` },
       {
         id: 'mecano',
         ...SPOTS.mecano,
         label: () => (gameState.rescued.mecanicienne ? 'Mécanicienne : atelier' : 'Établi (personne pour s\'en servir)'),
       },
-      { id: 'portail', ...SPOTS.portail, label: () => 'Portail : prendre la rame' },
+      { id: 'portail', ...SPOTS.portail, label: () => 'Portail : choisir une porte' },
     ];
     // Repères discrets au sol.
     for (const s of this.spots) {
@@ -112,8 +114,8 @@ export class RefugeScene extends Phaser.Scene {
     this.controls = new Controls(this);
     this.registry.set('controls', this.controls);
 
-    const onDepart = () => this.depart();
-    const onClose = () => (this.busy = false);
+    const onDepart = (rank: Rank) => this.depart(rank);
+    const onClose = () => { if (!this.departing) this.busy = false; };
     this.game.events.on('refuge-depart', onDepart);
     this.game.events.on('refuge-panel-closed', onClose);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -167,7 +169,9 @@ export class RefugeScene extends Phaser.Scene {
 
   private use(spot: Spot): void {
     if (spot.id === 'portail') {
-      this.depart();
+      this.busy = true;
+      this.lastPrompt = null;
+      this.game.events.emit('refuge-open-ranks');
       return;
     }
     if (spot.id === 'mecano' && !gameState.rescued.mecanicienne) {
@@ -181,13 +185,14 @@ export class RefugeScene extends Phaser.Scene {
   }
 
   /** Le portail mène à la rame : nouvelle sortie. */
-  private depart(): void {
-    if (this.scene.isActive('Mission')) return;
+  private depart(rank: Rank): void {
+    if (this.departing || !this.busy || !isRankOpen(rank)) return;
+    this.departing = true;
     this.busy = true;
     this.cameras.main.fadeOut(350, 5, 7, 15);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.stop('RefugeUI');
-      this.scene.start('Mission');
+      this.scene.start('Mission', { rank });
     });
   }
 }
