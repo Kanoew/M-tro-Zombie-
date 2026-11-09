@@ -24,6 +24,7 @@ import type { WeaponDef } from '../weapons';
 import {
   buildMap,
   QUAY,
+  QUAY_WALK,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
   TRAIN_DOOR,
@@ -358,11 +359,16 @@ export class MissionScene extends Phaser.Scene {
     const T = CONFIG.tile;
     this.add.tileSprite(0, 0, worldW, worldH, 'ground').setOrigin(0).setTileScale(0.36).setDepth(-20);
 
-    // Quai.
-    this.add
-      .tileSprite(QUAY.x0 * T, QUAY.y0 * T, (QUAY.x1 - QUAY.x0 + 1) * T, (QUAY.y1 - QUAY.y0 + 1) * T, 'quay')
-      .setOrigin(0)
-      .setDepth(-10);
+    const platform = (x0: number, y0: number, x1: number, y1: number, alpha = 1) =>
+      this.add.tileSprite(x0 * T, y0 * T, (x1 - x0 + 1) * T, (y1 - y0 + 1) * T, 'quay')
+        .setOrigin(0).setDepth(-10).setAlpha(alpha);
+    platform(QUAY_WALK.x0, QUAY_WALK.y0, QUAY_WALK.x1, QUAY_WALK.y1);
+    platform(QUAY.x0 + 2, QUAY.y0, QUAY.x1, QUAY_WALK.y0 - 1);
+    // Raccord de la rue au parvis, à l'est du dernier bâtiment.
+    for (const [offset, alpha] of [[-2, 0.2], [-1, 0.4], [0, 0.6], [1, 0.8]]) {
+      const x = QUAY.x0 + offset;
+      platform(x, QUAY.y0, x, QUAY_WALK.y0 - 1, alpha);
+    }
 
     // Murs : ceux des bâtiments restent cachés sous les toits tant qu'une porte est fermée ;
     // ceux du camp sont invisibles (l'illustration les remplace) mais bloquent.
@@ -431,11 +437,12 @@ export class MissionScene extends Phaser.Scene {
     this.add.image(tx, ty + 2, 'terminal_pillar').setOrigin(0.497, 0.868).setScale(0.2).setDepth(ty + 2);
 
     // Bannières de quarantaine, lumières de secours.
-    const banners: [number, number][] = [[36, 17], [62, 39], [12, 38], [90, 42], [30, 54]];
+    const banners: [number, number][] = [[36, 17], [62, QUAY.y0 + 1], [12, 38], [90, QUAY.y1 - 3], [30, QUAY_WALK.y0]];
     for (const [bx, by] of banners) {
       this.add.image(bx * T, by * T, 'banner').setScale(0.3).setDepth(by * T);
     }
-    for (const [lx, ly] of [[58, 44], [91, 44]] as [number, number][]) {
+    for (const lx of [58, 91]) {
+      const ly = QUAY.y1 - 1;
       const light = this.add.circle(lx * T, ly * T, 22, 0xff2a2a, 0.2).setBlendMode(Phaser.BlendModes.ADD).setDepth(3000);
       this.tweens.add({ targets: light, alpha: { from: 0.05, to: 0.35 }, duration: 700, yoyo: true, repeat: -1 });
       this.quayLights.push(light);
