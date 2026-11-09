@@ -50,7 +50,7 @@ Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la bar
 
 ## Carte et décor
 
-- Carte en paysage de 96 x 64 tuiles, jouée dans une fenêtre portrait qui suit le joueur.
+- Carte en paysage de 96 x 60 tuiles, jouée dans une fenêtre portrait qui suit le joueur.
 - Le refuge n'est plus dans la rue : l'ancien emplacement du camp est un grand **hangar** à fouiller. Les meubles du refuge sont des zones de collision (`campBlockers` dans `src/world/map.ts`).
 - Sous les bâtiments, une promenade longe la voie sur toute la largeur du quartier. La rame arrive par la droite. Au **quai**, les portes de la cabine éclairée s'ouvrent pour l'embarquement.
 - Chaque bâtiment fermé est recouvert d'un toit : on ne voit pas ce qu'il contient. Ouvrir ou forcer la porte lève le toit. Le contenu (pièce vide, caisses, infectés) est tiré à chaque sortie ; l'atelier abrite toujours la mécanicienne.

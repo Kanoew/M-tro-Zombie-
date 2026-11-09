@@ -67,9 +67,4 @@ export function createTextures(scene: Phaser.Scene): void {
     10,
     3,
   );
-  make('terminal', (g) => {
-    g.fillStyle(0x1a3a5c).fillRect(1, 1, T - 2, T - 2);
-    g.fillStyle(0x58d0ff).fillRect(3, 3, T - 6, 6);
-    g.fillStyle(0xff4f8b).fillRect(3, 11, 3, 2);
-  });
 }

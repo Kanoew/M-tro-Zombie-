@@ -24,7 +24,6 @@ import type { WeaponDef } from '../weapons';
 import {
   buildMap,
   QUAY,
-  QUAY_WALK,
   REINFORCEMENT_TILES,
   TERMINAL_TILE,
   TRAIN_DOOR,
@@ -202,11 +201,13 @@ export class MissionScene extends Phaser.Scene {
         case 'crate':
           this.addCrate(solids, e, x, y);
           break;
-        case 'terminal':
-          this.addStatic(solids, e, x, y, 'terminal', () => this.terminalLabel(), () => this.callTrain(), true);
-          // La borne est dessinée par le socle et le pilier peints (voir buildGround).
-          this.interactables[this.interactables.length - 1].sprite.setVisible(false);
+        case 'terminal': {
+          this.add.image(x, y, 'terminal_ring').setScale(0.16).setAlpha(0.22).setDepth(-8);
+          const sprite = this.add.sprite(x, y, 'terminal_pillar')
+            .setOrigin(0.497, 0.868).setScale(0.17).setAlpha(0.86).setDepth(y);
+          this.interactables.push({ entity: e, sprite, label: () => this.terminalLabel(), active: true, use: () => this.callTrain() });
           break;
+        }
         case 'npc':
           if (!gameState.rescued.mecanicienne) this.addCompanion(solids, e, x, y);
           break;
@@ -359,16 +360,8 @@ export class MissionScene extends Phaser.Scene {
     const T = CONFIG.tile;
     this.add.tileSprite(0, 0, worldW, worldH, 'ground').setOrigin(0).setTileScale(0.36).setDepth(-20);
 
-    const platform = (x0: number, y0: number, x1: number, y1: number, alpha = 1) =>
-      this.add.tileSprite(x0 * T, y0 * T, (x1 - x0 + 1) * T, (y1 - y0 + 1) * T, 'quay')
-        .setOrigin(0).setDepth(-10).setAlpha(alpha);
-    platform(QUAY_WALK.x0, QUAY_WALK.y0, QUAY_WALK.x1, QUAY_WALK.y1);
-    platform(QUAY.x0 + 2, QUAY.y0, QUAY.x1, QUAY_WALK.y0 - 1);
-    // Raccord de la rue au parvis, à l'est du dernier bâtiment.
-    for (const [offset, alpha] of [[-2, 0.2], [-1, 0.4], [0, 0.6], [1, 0.8]]) {
-      const x = QUAY.x0 + offset;
-      platform(x, QUAY.y0, x, QUAY_WALK.y0 - 1, alpha);
-    }
+    this.add.tileSprite(QUAY.x0 * T, QUAY.y0 * T, (QUAY.x1 - QUAY.x0 + 1) * T,
+      (QUAY.y1 - QUAY.y0 + 1) * T, 'quay').setOrigin(0).setDepth(-10);
 
     // Murs : ceux des bâtiments restent cachés sous les toits tant qu'une porte est fermée ;
     // ceux du camp sont invisibles (l'illustration les remplace) mais bloquent.
@@ -428,16 +421,13 @@ export class MissionScene extends Phaser.Scene {
       sign(NEON_KEYS[(i + 3) % NEON_KEYS.length], px + pw * 0.78, bottom - 20, 0.2);
     });
 
-    // Quai : entrée de métro au nord, borne au centre (socle posé au sol, pilier par-dessus).
-    const tx = TERMINAL_TILE.tx * T + T / 2;
-    const ty = TERMINAL_TILE.ty * T + T / 2;
-    const entryX = ((TRAIN_DOOR.x0 + TRAIN_DOOR.x1 + 1) / 2) * T;
-    this.add.image(entryX, (QUAY.y0 + 2) * T, 'metro').setOrigin(0.5, 1).setScale(0.36).setDepth((QUAY.y0 + 2) * T);
-    this.add.image(tx, ty, 'terminal_ring').setScale(0.2).setDepth(-8);
-    this.add.image(tx, ty + 2, 'terminal_pillar').setOrigin(0.497, 0.868).setScale(0.2).setDepth(ty + 2);
+    // Façade décorative, au bord est et hors de l'axe de la borne.
+    const metroY = (QUAY.y0 - 2) * T;
+    this.add.image((QUAY.x1 + 1) * T, metroY, 'metro')
+      .setOrigin(1, 1).setScale(0.30).setDepth(metroY);
 
     // Bannières de quarantaine, lumières de secours.
-    const banners: [number, number][] = [[36, 17], [62, QUAY.y0 + 1], [12, 38], [90, QUAY.y1 - 3], [30, QUAY_WALK.y0]];
+    const banners: [number, number][] = [[36, 17], [62, QUAY.y0 - 1], [12, 36], [90, QUAY.y0 - 1], [30, QUAY.y0]];
     for (const [bx, by] of banners) {
       this.add.image(bx * T, by * T, 'banner').setScale(0.3).setDepth(by * T);
     }
@@ -523,31 +513,6 @@ export class MissionScene extends Phaser.Scene {
         const found = this.rollLoot(night);
         this.emitNoise(x, y, CONFIG.noise.crateOpened, e.id);
         this.toast(`Caisse ouverte : ${found}. Ça fait du bruit.`);
-      },
-    };
-    this.interactables.push(it);
-  }
-
-  private addStatic(
-    solids: Phaser.Physics.Arcade.StaticGroup,
-    e: Entity,
-    x: number,
-    y: number,
-    texture: string,
-    label: string | (() => string),
-    use: () => void,
-    reusable = false,
-  ): void {
-    const sprite = solids.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
-    sprite.setDepth(y);
-    const it: Interactable = {
-      entity: e,
-      sprite,
-      label,
-      active: true,
-      use: () => {
-        if (!reusable) it.active = false;
-        use();
       },
     };
     this.interactables.push(it);

@@ -45,12 +45,11 @@ export interface MapData {
 }
 
 /** Carte en paysage, jouée dans une fenêtre portrait qui suit le joueur. */
-export const MAP_SIZE = { width: 96, height: 64 };
+export const MAP_SIZE = { width: 96, height: 60 };
 
 /** Parvis au sud-est, promenade et voie sur toute la largeur (bornes incluses). */
-export const QUAY = { x0: 56, y0: 46, x1: MAP_SIZE.width - 2, y1: 53 };
-export const QUAY_WALK = { ...QUAY, x0: 1, y0: 51 };
-export const TRACK = { ...QUAY_WALK, y0: QUAY.y1 + 1, y1: MAP_SIZE.height - 2 };
+export const QUAY = { x0: 1, y0: 47, x1: MAP_SIZE.width - 2, y1: 49 };
+export const TRACK = { ...QUAY, y0: QUAY.y1 + 1, y1: MAP_SIZE.height - 2 };
 
 /** L'unique entrée côté quai et l'intérieur visible de la rame. */
 export const TRAIN_DOOR = { x0: 67, x1: 69, y: TRACK.y0 };
@@ -102,7 +101,7 @@ const CAMP_BLOCKS: [number, number, number, number][] = [
 
 /** Points d'entrée des renforts attirés par la rame (tuiles de rue, près des bords). */
 export const REINFORCEMENT_TILES: [number, number][] = [
-  [3, 17], [3, 38], [93, 17], [93, 36], [36, 17], [44, 37], [18, 40], [66, 17],
+  [3, 17], [3, 35], [93, 17], [93, 36], [36, 17], [44, 35], [18, 35], [66, 17],
 ];
 
 type Rng = () => number;
@@ -123,9 +122,9 @@ const BUILDINGS: Omit<Building, 'open'>[] = [
   { id: 'serveurs', x: 76, y: 20, w: 18, h: 12, door: [84, 31], forced: true },
   // Rangée sud : un grand hangar (porte au sud), puis deux bâtiments (portes au nord).
   // Le refuge n'est plus dans la rue : on y va en métro (RefugeScene).
-  { id: 'hangar', x: 2, y: 41, w: 20, h: 10, door: [12, 50], forced: true },
-  { id: 'depot', x: 26, y: 41, w: 13, h: 10, door: [32, 41], forced: true },
-  { id: 'commissariat', x: 41, y: 41, w: 13, h: 10, door: [47, 41], forced: true },
+  { id: 'hangar', x: 2, y: 37, w: 20, h: 10, door: [12, 46], forced: true },
+  { id: 'depot', x: 26, y: 37, w: 13, h: 10, door: [32, 37], forced: true },
+  { id: 'commissariat', x: 41, y: 37, w: 13, h: 10, door: [47, 37], forced: true },
 ];
 
 /**
@@ -181,8 +180,7 @@ export function buildMap(rng: Rng = Math.random): MapData {
 
   // Aucun butin ni infecté n'apparaît au départ sur le quai ou la voie.
   for (let ty = QUAY.y0; ty < TRACK.y0; ty++) {
-    const left = ty < QUAY_WALK.y0 ? QUAY.x0 : QUAY_WALK.x0;
-    for (let tx = left; tx <= QUAY.x1; tx++) tiles[ty][tx] = 'quay';
+    for (let tx = QUAY.x0; tx <= QUAY.x1; tx++) tiles[ty][tx] = 'quay';
   }
   for (let ty = TRACK.y0; ty <= TRACK.y1; ty++) {
     for (let tx = TRACK.x0; tx <= TRACK.x1; tx++) tiles[ty][tx] = 'track';

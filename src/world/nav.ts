@@ -23,7 +23,7 @@ export class Nav {
     this.walls = map.tiles.map((row) => row.map((t) => t === 'wall'));
     for (const e of map.entities) {
       if (e.kind === 'door' && !e.open) this.closedDoors.add(this.key(e.tx, e.ty));
-      if (e.kind === 'crate' || e.kind === 'terminal') this.solids.add(this.key(e.tx, e.ty));
+      if (e.kind === 'crate') this.solids.add(this.key(e.tx, e.ty));
     }
     // Meubles du camp : toute tuile dont le centre tombe dans un bloc est pleine.
     for (const b of map.blockers) {
@@ -115,7 +115,7 @@ export class Nav {
     if (!this.inside(sx, sy) || !this.inside(gx, gy)) return null;
     if (sx === gx && sy === gy) return [];
 
-    // Cible occupée (caisse, borne) : on vise une tuile libre voisine.
+    // Cible occupée (caisse) : on vise une tuile libre voisine.
     const targetBlocked = this.blocked(gx, gy);
     const atGoal = (x: number, y: number) =>
       targetBlocked ? Math.max(Math.abs(x - gx), Math.abs(y - gy)) <= 1 : x === gx && y === gy;
