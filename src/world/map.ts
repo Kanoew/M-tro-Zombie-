@@ -133,7 +133,7 @@ const BUILDINGS: Omit<Building, 'open'>[] = [
  * jamais ce qu'il y a derrière une porte fermée. L'atelier abrite toujours la
  * mécanicienne.
  */
-export function buildMap(rng: Rng = Math.random): MapData {
+export function buildMap(rng: Rng = Math.random, extraInfected = 0): MapData {
   const { width, height } = MAP_SIZE;
   const tiles: Tile[][] = Array.from({ length: height }, () =>
     Array.from({ length: width }, (): Tile => 'street'),
@@ -259,7 +259,7 @@ export function buildMap(rng: Rng = Math.random): MapData {
     }
     return null;
   };
-  for (let i = 0; i < CONFIG.world.streetInfected; i++) {
+  for (let i = 0; i < CONFIG.world.streetInfected + extraInfected; i++) {
     const s = freeStreet();
     if (s) addInfected(s[0], s[1]);
   }

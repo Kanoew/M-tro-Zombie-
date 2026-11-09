@@ -43,7 +43,7 @@ Une partie dure moins de 10 minutes. Horloge depuis le départ du camp (`time` d
 | 0:00 | Jour | La borne appelle la rame normalement. |
 | 5:00 | Crépuscule | Le talkie prévient, la lumière tourne à l'orange. La barre affiche le compte à rebours du dernier appel. |
 | 5:30 | Dernier appel | Passé ce cap, la borne ne répond plus. Une rame appelée avant part au plus tard à 6:30. |
-| 6:30 | Nuit (2 min) | Plus aucune rame. **Vagues** : des rôdeurs entrent par les bords de la carte et fouillent les alentours du joueur, de plus en plus souvent (toutes les 6 s puis 3 s, 14 en vie au maximum). **6 caisses de nuit** (lueur cyan) tombent dans la rue : 25 % de pièce rare, 40 % d'objet de valeur. Les infectés entendent 1,6 fois plus loin, voient plus loin et courent plus vite. |
+| 6:30 | Nuit (2 min) | Plus aucune rame. **Vagues** : des infectés arrivent par les bords et fouillent les alentours du joueur (toutes les 6 s puis 3 s au rang E, jusqu'à cinq renforts nocturnes en vie). **6 caisses de nuit** (lueur cyan) tombent dans la rue : 25 % de pièce rare, 40 % d'objet de valeur. Les infectés entendent 1,6 fois plus loin, voient plus loin et courent plus vite. |
 | 8:30 | Aube | Le premier métro du matin arrive tout seul et attend 60 s. À bord à la fermeture : retour réussi, butin x2 (`morning.lootBonus`). Raté : échec. |
 
 Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la barre du jour marque le dernier appel. La teinte de lumière demande WebGL (désactivée en rendu 2D de secours).
@@ -62,19 +62,25 @@ Réglages de la nuit : `night` dans `src/config.ts`. Le repère rouge sur la bar
 Le refuge est une scène à part (`src/scenes/RefugeScene.ts`), accessible seulement en métro. On y arrive depuis l'écran titre et depuis le bilan (bouton **REFUGE**). On s'y déplace comme dans la rue, sans infectés :
 
 - **Comptoir** (poste informatique bleu) : vend le stock en crédits (CR). Matériaux 1, objets de valeur 12, pièces rares 40 (`economy` dans `src/config.ts`).
-- **Mécanicienne** (devant l'établi) : l'atelier. Elle n'est là qu'une fois ramenée de l'atelier, en ville. Trois améliorations sur 3 niveaux (150, 350, 600 CR) :
-  - **Vie** : +25 PV max par niveau (100 → 175)
-  - **Endurance** : +25 par niveau (100 → 175)
-  - **Arc** : +4 dégâts par flèche (20 → 32 ; au niveau 3, une flèche abat un infecté)
-- **Portail** : prendre la rame. La sortie commence sur le quai, à la descente de la rame, qui repart aussitôt.
+- **Mécanicienne** (devant l'établi) : l'atelier. Elle n'est là qu'une fois ramenée de l'atelier, en ville. Trois améliorations sur 5 niveaux (150, 350, 600, 1 000, 1 600 CR) :
+  - **Vie** : +25 PV max par niveau (100 → 225)
+  - **Endurance** : +25 par niveau (100 → 225)
+  - **Arc** : +4 dégâts par flèche (20 → 40 ; dès le niveau 3, une flèche abat un infecté)
+- **Portail** : choisir une porte de rang, puis prendre la rame. La sortie commence sur le quai, à la descente de la rame, qui repart aussitôt.
 
 Les repères au sol (cercles verts) marquent les trois points. Panneau ouvert, au clavier : `V` vend, `1` `2` `3` améliorent, `Échap` ferme. Le panneau est dans `src/ui/RefugePanel.ts`, l'interface du refuge dans `src/scenes/RefugeUIScene.ts`.
 
-Depuis le bilan, **REPARTIR** relance directement une sortie sans passer par le refuge.
+Depuis le bilan, **REPARTIR** relance une sortie au même rang.
+
+## Portes de rang
+
+Seule la porte E est ouverte au départ. Au portail, sélectionne une porte ouverte. Au clavier, les touches 1 à 6 correspondent aux rangs E à S. Une extraction par le dernier métro ou le premier métro du matin ouvre le rang suivant si tu joues la porte la plus haute déjà ouverte. Tu peux rejouer un rang inférieur à tout moment.
+
+Le quartier reste le même. Les réglages de départ sont dans `CONFIG.ranks` (densité, vitesse, cadence nocturne et valeur de revente). Le coureur est identifiable à son contour violet à partir de C. La valeur du butin va de ×1 en E à ×2,75 en S et se cumule avec le bonus de l'aube. Le supplément rejoint la valeur du stock au retour et est payé à sa vente au comptoir.
 
 ## Sauvegarde
 
-Les acquis (stock, crédits, améliorations, mécanicienne sauvée) sont gardés dans le navigateur (`localStorage`, clé `dernier-metro-save-v1`) après chaque retour, mort, vente ou achat. Le butin d'une sortie en cours n'est jamais sauvegardé. Pour repartir de zéro : `__dm.resetSave()` dans la console, puis recharger.
+Les acquis (stock, crédits, améliorations, mécanicienne sauvée, rang le plus haut et supplément de revente) sont gardés dans le navigateur (`localStorage`, clé `dernier-metro-save-v1`) après chaque retour, mort, vente ou achat. Le butin d'une sortie en cours n'est jamais sauvegardé. Pour repartir de zéro : `__dm.resetSave()` dans la console, puis recharger.
 
 ## Écran titre
 

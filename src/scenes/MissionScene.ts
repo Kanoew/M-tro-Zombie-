@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { CONFIG } from '../config';
+import { CONFIG, type Rank } from '../config';
 import { Companion } from '../entities/Companion';
 import { Infected, type InfectedContext, type Phase } from '../entities/Infected';
 import { Controls } from '../input/Controls';
@@ -12,11 +12,12 @@ import {
   cycleWeapon,
   describeStock,
   gameState,
+  isRankOpen,
   settleFailure,
   settleSuccess,
   startMission,
   playerStats,
-  stockValue,
+  stockResaleValue,
   weaponDamage,
 } from '../state/gameState';
 import type { HudData, MissionEnd } from '../ui/events';
@@ -80,6 +81,9 @@ export class MissionScene extends Phaser.Scene {
   private map!: MapData;
   private interactables: Interactable[] = [];
   private infected: Infected[] = [];
+  private nightReinforcements: Infected[] = [];
+  private rank: Rank = 'E';
+  private spawnedInfected = 0;
   private infectedGroup!: Phaser.Physics.Arcade.Group;
   private infectedCtx!: InfectedContext;
   private arrows!: Phaser.Physics.Arcade.Group;
@@ -121,7 +125,9 @@ export class MissionScene extends Phaser.Scene {
     super({ key: 'Mission' });
   }
 
-  create(): void {
+  create(data?: { rank?: Rank }): void {
+    this.rank = data?.rank && isRankOpen(data.rank) ? data.rank : 'E';
+    this.spawnedInfected = 0;
     const T = CONFIG.tile;
     createTextures(this);
     startMission();
@@ -144,6 +150,7 @@ export class MissionScene extends Phaser.Scene {
     this.nextWaveAt = 0;
     this.interactables = [];
     this.infected = [];
+    this.nightReinforcements = [];
     this.companion = null;
     this.buildingViews = new Map();
     this.quayLights = [];
@@ -152,7 +159,7 @@ export class MissionScene extends Phaser.Scene {
     this.shootUntil = 0;
     this.nextHudAt = 0;
 
-    const map = buildMap();
+    const map = buildMap(Math.random, CONFIG.ranks[this.rank].extraInfected);
     this.map = map;
     this.nav = new Nav(map, T);
     const worldW = map.width * T;
@@ -243,7 +250,7 @@ export class MissionScene extends Phaser.Scene {
     this.controls = new Controls(this);
     this.registry.set('controls', this.controls);
 
-    const onRestart = () => this.scene.restart();
+    const onRestart = () => this.scene.restart({ rank: this.rank });
     this.game.events.on('mission-restart', onRestart);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.game.events.off('mission-restart', onRestart);
@@ -537,7 +544,10 @@ export class MissionScene extends Phaser.Scene {
   }
 
   private spawnInfected(x: number, y: number): Infected {
-    const inf = new Infected(this, x, y, this.infectedCtx);
+    const settings = CONFIG.ranks[this.rank];
+    const runner = settings.runnerEvery > 0 && this.spawnedInfected % settings.runnerEvery === 0;
+    this.spawnedInfected++;
+    const inf = new Infected(this, x, y, this.infectedCtx, settings.speed, runner);
     this.infectedGroup.add(inf);
     this.infected.push(inf);
     return inf;
@@ -738,7 +748,8 @@ export class MissionScene extends Phaser.Scene {
     // ... et d'autres arrivent des bords de la carte.
     if (time >= this.nextReinforceAt) {
       this.nextReinforceAt = time + X.reinforceEveryMs;
-      this.spawnReinforcement();
+      const cap = X.reinforceMaxAlive + CONFIG.ranks[this.rank].extraInfected;
+      if (this.infected.filter((i) => !i.dead).length < cap) this.spawnReinforcement();
     }
 
     // Les portes clignotent sur les 10 dernières secondes.
@@ -753,9 +764,8 @@ export class MissionScene extends Phaser.Scene {
    * Un nouvel infecté entre par un bord de carte, hors de vue, et file vers la
    * borne (ou vers `target` : la nuit, les alentours du joueur).
    */
-  private spawnReinforcement(target?: { x: number; y: number }, maxAlive = CONFIG.extraction.reinforceMaxAlive): void {
+  private spawnReinforcement(target?: { x: number; y: number }): Infected | undefined {
     const X = CONFIG.extraction;
-    if (this.infected.filter((i) => !i.dead).length >= maxAlive) return;
     const T = CONFIG.tile;
     const far = REINFORCEMENT_TILES.map(([tx, ty]) => ({ x: tx * T + T / 2, y: ty * T + T / 2 })).filter(
       (p) => Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) >= X.reinforceMinDistance,
@@ -765,6 +775,7 @@ export class MissionScene extends Phaser.Scene {
     const inf = this.spawnInfected(p.x, p.y);
     const t = target ?? this.terminalPos();
     inf.hear(t.x, t.y, CONFIG.noise.quayWaiting);
+    return inf;
   }
 
   // --- Nuit ----------------------------------------------------------------
@@ -776,13 +787,17 @@ export class MissionScene extends Phaser.Scene {
     const N = CONFIG.night;
     const t = CONFIG.time;
     const k = Phaser.Math.Clamp((this.elapsed - t.nightAt) / (t.dawnAt - t.nightAt), 0, 1);
-    this.nextWaveAt = time + Phaser.Math.Linear(N.waveEveryStartMs, N.waveEveryEndMs, k);
+    const settings = CONFIG.ranks[this.rank];
+    this.nextWaveAt = time + Phaser.Math.Linear(N.waveEveryStartMs, N.waveEveryEndMs, k) * settings.waveInterval;
+    this.nightReinforcements = this.nightReinforcements.filter((i) => !i.dead);
+    if (this.nightReinforcements.length >= settings.waveMaxAlive) return;
     const spread = N.waveTargetSpread;
     const target = {
       x: this.player.x + Phaser.Math.Between(-spread, spread),
       y: this.player.y + Phaser.Math.Between(-spread, spread),
     };
-    this.spawnReinforcement(target, N.waveMaxAlive);
+    const infected = this.spawnReinforcement(target);
+    if (infected) this.nightReinforcements.push(infected);
   }
 
   /** À la tombée de la nuit, des caisses de ravitaillement apparaissent dans la rue. */
@@ -860,12 +875,13 @@ export class MissionScene extends Phaser.Scene {
       }
       const gained = { ...gameState.butin };
       const mechanicAboard = !!c && c.following && this.inTrainZone(c.x, c.y);
-      settleSuccess(mechanicAboard);
+      const { resale, unlocked } = settleSuccess(mechanicAboard, this.rank);
       lines.push(`Butin ramené : ${describeStock(gained)}.`);
-      lines.push(`Revente de la sortie : ${stockValue(gained)} CR.`);
+      lines.push(`Revente porte ${this.rank} : ${resale} CR.`);
+      if (unlocked) lines.push(`Porte ${unlocked} débloquée au refuge.`);
       if (mechanicAboard) lines.push('Mécanicienne : à bord. Sauvetage validé. L\'atelier ouvre au refuge.');
       else if (c) lines.push('Mécanicienne : restée sur place. Le sauvetage reste ouvert.');
-      lines.push(`Stock au refuge : ${stockValue(gameState.stock)} CR à vendre.`);
+      lines.push(`Stock au refuge : ${stockResaleValue()} CR à vendre.`);
     } else {
       const lost = { ...gameState.butin };
       settleFailure();
