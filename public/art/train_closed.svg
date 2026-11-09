@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1056" height="240" viewBox="0 0 352 80">
+  <defs>
+    <linearGradient id="roof" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#17242f"/>
+      <stop offset=".18" stop-color="#46606d"/>
+      <stop offset=".49" stop-color="#263743"/>
+      <stop offset=".78" stop-color="#3d515b"/>
+      <stop offset="1" stop-color="#1a2934"/>
+    </linearGradient>
+    <pattern id="ribs" width="1" height="4" patternUnits="userSpaceOnUse">
+      <path d="M0 1h1" stroke="#0f1923" stroke-opacity=".48"/>
+    </pattern>
+    <g id="vent">
+      <rect x="0" y="0" width="30" height="30" rx="4" fill="#263a45" stroke="#6d8790"/>
+      <circle cx="15" cy="15" r="10" fill="#162630" stroke="#536f79"/>
+      <path d="M8 12h14m-15 3h16m-15 3h14" stroke="#5b7580"/>
+    </g>
+    <g id="door">
+      <path d="M0 0h36v10H0Z" fill="#253944" stroke="#708892"/>
+      <path d="M18 1v8M4 3h10m8 0h10" stroke="#91abb1"/>
+    </g>
+  </defs>
+  <rect x="1" y="2" width="350" height="76" rx="12" fill="#0b121a" stroke="#070b12" stroke-width="2"/>
+  <rect x="5" y="5" width="342" height="70" rx="9" fill="url(#roof)" stroke="#728991"/>
+  <rect x="8" y="12" width="336" height="56" rx="7" fill="url(#ribs)" stroke="#516975"/>
+  <path d="M17 14h318M17 66h318" stroke="#8dc5cd" stroke-opacity=".55"/>
+  <path d="M21 20v40m98-40v40m114-40v40m98-40v40" stroke="#131f29" stroke-width="2"/>
+  <rect x="144" y="29" width="64" height="22" rx="3" fill="#243440" stroke="#617984"/>
+  <path d="M150 34h52m-52 4h52m-52 4h52m-52 4h52" stroke="#405762"/>
+  <use href="#vent" x="43" y="25"/>
+  <use href="#vent" x="279" y="25"/>
+  <use href="#door" x="82" y="4"/>
+  <use href="#door" x="234" y="4"/>
+  <use href="#door" x="82" y="66"/>
+  <use href="#door" x="234" y="66"/>
+  <path d="M17 31v7m0 4v7m318-18v7m0 4v7" stroke="#a2bfc3" stroke-opacity=".7" stroke-width="1.5"/>
+</svg>

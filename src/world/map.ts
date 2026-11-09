@@ -44,19 +44,20 @@ export interface MapData {
   blockers: Blocker[];
 }
 
-/** Carte en paysage : 96 x 56 tuiles, jouée dans une fenêtre portrait qui suit le joueur. */
-export const MAP_SIZE = { width: 96, height: 56 };
+/** Carte en paysage, jouée dans une fenêtre portrait qui suit le joueur. */
+export const MAP_SIZE = { width: 96, height: 64 };
 
-/** Quai et voie d'est en ouest, au sud-est du quartier (bornes incluses). */
-export const QUAY = { x0: 56, y0: 38, x1: 94, y1: 45 };
-export const TRACK = { ...QUAY, y0: QUAY.y1 + 1, y1: 54 };
+/** Parvis au sud-est, promenade et voie sur toute la largeur (bornes incluses). */
+export const QUAY = { x0: 56, y0: 46, x1: MAP_SIZE.width - 2, y1: 53 };
+export const QUAY_WALK = { ...QUAY, x0: 1, y0: 51 };
+export const TRACK = { ...QUAY_WALK, y0: QUAY.y1 + 1, y1: MAP_SIZE.height - 2 };
 
 /** L'unique entrée côté quai et l'intérieur visible de la rame. */
 export const TRAIN_DOOR = { x0: 67, x1: 69, y: TRACK.y0 };
-export const TRAIN_ZONE = { x0: 64, y0: TRAIN_DOOR.y + 1, x1: 72, y1: 50 };
+export const TRAIN_ZONE = { x0: 64, y0: TRAIN_DOOR.y + 1, x1: 72, y1: TRAIN_DOOR.y + 4 };
 
 /** Borne du quai. */
-export const TERMINAL_TILE = { tx: 72, ty: 43 };
+export const TERMINAL_TILE = { tx: 72, ty: QUAY.y1 - 2 };
 
 function trackBlockers(): Blocker[] {
   const r = TRACK;
@@ -178,11 +179,10 @@ export function buildMap(rng: Rng = Math.random): MapData {
     });
   }
 
-  // Quai et voie réservés à la station : aucun butin ni infecté n'y apparaît au départ.
-  for (let ty = QUAY.y0; ty <= QUAY.y1; ty++) {
-    for (let tx = QUAY.x0; tx <= QUAY.x1; tx++) {
-      tiles[ty][tx] = 'quay';
-    }
+  // Aucun butin ni infecté n'apparaît au départ sur le quai ou la voie.
+  for (let ty = QUAY.y0; ty < TRACK.y0; ty++) {
+    const left = ty < QUAY_WALK.y0 ? QUAY.x0 : QUAY_WALK.x0;
+    for (let tx = left; tx <= QUAY.x1; tx++) tiles[ty][tx] = 'quay';
   }
   for (let ty = TRACK.y0; ty <= TRACK.y1; ty++) {
     for (let tx = TRACK.x0; tx <= TRACK.x1; tx++) tiles[ty][tx] = 'track';
