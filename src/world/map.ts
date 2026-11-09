@@ -247,13 +247,14 @@ export function buildMap(rng: Rng = Math.random, extraInfected = 0): MapData {
   }
 
   /** Tuile de rue libre, loin du refuge et de la borne. */
-  const freeStreet = (): [number, number] | null => {
+  const freeStreet = (forCrate = false): [number, number] | null => {
     for (let attempt = 0; attempt < 80; attempt++) {
       const tx = pick(2, width - 3);
       const ty = pick(2, height - 3);
       if (tiles[ty][tx] !== 'street' || taken.has(key(tx, ty))) continue;
       if (tx < 30 && ty > 34) continue; // pas devant le camp
       if (Math.hypot(tx - TERMINAL_TILE.tx, ty - TERMINAL_TILE.ty) < 6) continue; // ni sur la borne
+      if (forCrate && BUILDINGS.some(({ door: [x, y] }) => Math.max(Math.abs(tx - x), Math.abs(ty - y)) <= 1)) continue;
       taken.add(key(tx, ty));
       return [tx, ty];
     }
@@ -264,7 +265,7 @@ export function buildMap(rng: Rng = Math.random, extraInfected = 0): MapData {
     if (s) addInfected(s[0], s[1]);
   }
   for (let i = 0; i < CONFIG.world.streetCrates; i++) {
-    const s = freeStreet();
+    const s = freeStreet(true);
     if (s) addCrate(s[0], s[1]);
   }
 

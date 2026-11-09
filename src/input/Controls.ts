@@ -15,6 +15,7 @@ export class Controls {
 
   private readonly keys: KeyMap;
   private readonly shift: Phaser.Input.Keyboard.Key;
+  private readonly movement = new Phaser.Math.Vector2();
   private interactQueued = false;
   private attackQueued = false;
   private switchQueued = false;
@@ -52,7 +53,7 @@ export class Controls {
     if (k.D.isDown || k.RIGHT.isDown) x += 1;
     if (k.Z.isDown || k.W.isDown || k.UP.isDown) y -= 1;
     if (k.S.isDown || k.DOWN.isDown) y += 1;
-    const v = new Phaser.Math.Vector2(x, y);
+    const v = this.movement.set(x, y);
     if (v.lengthSq() > 0) return v.normalize();
     return v.copy(this.touch);
   }

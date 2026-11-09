@@ -53,10 +53,6 @@ export function createTextures(scene: Phaser.Scene): void {
     g.fillStyle(0x1f6f63).fillRect(1, 1, T - 2, T - 2);
     g.fillStyle(0x58e6cc).fillRect(1, 7, T - 2, 2).fillRect(7, 1, 2, T - 2);
   });
-  make('crate_open', (g) => {
-    g.fillStyle(0x12332e).fillRect(1, 1, T - 2, T - 2);
-    g.lineStyle(1, 0x58e6cc).strokeRect(1.5, 1.5, T - 3, T - 3);
-  });
   make(
     'arrow',
     (g) => {
